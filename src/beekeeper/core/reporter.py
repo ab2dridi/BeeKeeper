@@ -124,6 +124,28 @@ def print_compaction_report(report: CompactionReport) -> str:
             ]
         )
 
+    if report.status.value == "completed" and report.before_file_count > 0:
+        file_pct = (report.before_file_count - report.after_file_count) / report.before_file_count * 100
+        size_gain = ""
+        if report.before_avg_file_size > 0:
+            multiplier = report.after_avg_file_size / report.before_avg_file_size
+            size_gain = (
+                f"    Avg size gain:     {format_bytes(report.before_avg_file_size)}"
+                f" -> {format_bytes(report.after_avg_file_size)}"
+                f" (+{multiplier:.1f}x)"
+            )
+        lines.extend(
+            [
+                "",
+                "  Gain:",
+                f"    File reduction:    {report.before_file_count:,}"
+                f" -> {report.after_file_count:,}"
+                f" (-{file_pct:.1f}%)",
+            ]
+        )
+        if size_gain:
+            lines.append(size_gain)
+
     if report.error:
         lines.extend(["", f"  ERROR: {report.error}"])
 

@@ -48,13 +48,16 @@ class CompactionEngine(ABC):
         """
 
     @abstractmethod
-    def rollback(self, database: str, table_name: str, backup_table: str | None = None) -> None:
+    def rollback(self, database: str, table_name: str, backup_table: str | None = None) -> BackupInfo:
         """Rollback a table to its pre-compaction state.
 
         Args:
             database: Database name.
             table_name: Table name.
             backup_table: Specific backup table to use. If None, uses most recent.
+
+        Returns:
+            BackupInfo of the backup that was used for the rollback.
         """
 
     @abstractmethod

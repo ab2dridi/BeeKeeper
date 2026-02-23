@@ -120,3 +120,23 @@ class HdfsClient:
         hadoop_path = self._jvm.org.apache.hadoop.fs.Path(path)
         fs = self._get_filesystem(path)
         return bool(fs.mkdirs(hadoop_path))
+
+    def rename_path(self, src: str, dst: str) -> bool:
+        """Rename/move an HDFS path (atomic within the same namespace).
+
+        Args:
+            src: Source HDFS path.
+            dst: Destination HDFS path.
+
+        Returns:
+            True if rename was successful.
+        """
+        src_path = self._jvm.org.apache.hadoop.fs.Path(src)
+        dst_path = self._jvm.org.apache.hadoop.fs.Path(dst)
+        fs = self._get_filesystem(src)
+        result = bool(fs.rename(src_path, dst_path))
+        if not result:
+            msg = f"HDFS rename failed: {src} -> {dst}"
+            raise RuntimeError(msg)
+        logger.info("Renamed HDFS path: %s -> %s", src, dst)
+        return result

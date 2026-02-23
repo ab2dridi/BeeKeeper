@@ -50,7 +50,11 @@ class BackupManager:
 
         logger.info("Creating zero-copy backup: %s", full_backup)
 
-        self._spark.sql(f"CREATE EXTERNAL TABLE {full_backup} LIKE {full_original} LOCATION '{table_info.location}'")
+        self._spark.sql(
+            f"CREATE EXTERNAL TABLE {full_backup} LIKE {full_original} "
+            f"LOCATION '{table_info.location}' "
+            f"TBLPROPERTIES ('external.table.purge'='false')"
+        )
 
         partition_locations: dict[str, str] = {}
 
@@ -162,6 +166,30 @@ class BackupManager:
         backup_tables = [row["tableName"] for row in tables if row["tableName"].startswith(prefix)]
         backup_tables.sort(reverse=True)
         return backup_tables
+
+    def update_table_location(self, backup_table: str, new_location: str) -> None:
+        """Update the HDFS location of a backup table in the Metastore.
+
+        Used after an HDFS rename to keep the backup table pointing at the
+        original data (now living under a new path).
+
+        Args:
+            backup_table: Fully qualified backup table name.
+            new_location: New HDFS location.
+        """
+        self._spark.sql(f"ALTER TABLE {backup_table} SET LOCATION '{new_location}'")
+        logger.debug("Updated backup table %s location to %s", backup_table, new_location)
+
+    def update_partition_location(self, backup_table: str, spec_sql: str, new_location: str) -> None:
+        """Update the HDFS location of a backup table partition in the Metastore.
+
+        Args:
+            backup_table: Fully qualified backup table name.
+            spec_sql: Partition spec SQL (e.g., "year='2024', month='01'").
+            new_location: New HDFS location.
+        """
+        self._spark.sql(f"ALTER TABLE {backup_table} PARTITION({spec_sql}) SET LOCATION '{new_location}'")
+        logger.debug("Updated backup partition %s (%s) location to %s", backup_table, spec_sql, new_location)
 
     def drop_backup(self, database: str, backup_table_name: str) -> None:
         """Drop a backup table (metadata only, no data deleted).

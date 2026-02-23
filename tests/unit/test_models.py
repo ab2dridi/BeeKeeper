@@ -7,7 +7,6 @@ from datetime import datetime
 from beekeeper.models import (
     BackupInfo,
     CompactionReport,
-    CompactionState,
     CompactionStatus,
     FileFormat,
     PartitionInfo,
@@ -123,15 +122,6 @@ class TestBackupInfo:
         )
         assert b.partition_locations == {}
         assert b.row_count is None
-
-
-class TestCompactionState:
-    def test_defaults(self):
-        t = TableInfo(database="db", table_name="tbl", location="", file_format=FileFormat.PARQUET)
-        state = CompactionState(table_info=t)
-        assert state.status == CompactionStatus.PENDING
-        assert state.backup_info is None
-        assert state.new_locations == {}
 
 
 class TestCompactionReport:

@@ -57,10 +57,21 @@ def mock_hdfs_client():
         file_count=65000,
         total_size_bytes=3 * 1024 * 1024 * 1024,  # 3 GB
     )
-    client.path_exists.return_value = True
+    # Default: paths do not exist (safe to use as staging areas)
+    client.path_exists.return_value = False
     client.delete_path.return_value = True
     client.mkdirs.return_value = True
+    client.rename_path.return_value = True
     return client
+
+
+@pytest.fixture
+def mock_backup_mgr():
+    """Mock BackupManager."""
+    from beekeeper.core.backup import BackupManager
+
+    mgr = MagicMock(spec=BackupManager)
+    return mgr
 
 
 @pytest.fixture

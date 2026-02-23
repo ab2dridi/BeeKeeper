@@ -63,7 +63,9 @@ class TestFullWorkflow:
             # After compaction: few large files
             after_info = HdfsFileInfo(file_count=24, total_size_bytes=3 * 1024 * 1024 * 1024)
             mock_hdfs.get_file_info.side_effect = [before_info, after_info]
+            mock_hdfs.path_exists.return_value = False
             mock_hdfs.delete_path.return_value = True
+            mock_hdfs.rename_path.return_value = True
 
             # Mock Spark read/write
             mock_df = MagicMock()
@@ -128,7 +130,9 @@ class TestFullWorkflow:
             small_files = HdfsFileInfo(file_count=10000, total_size_bytes=1 * 1024 * 1024 * 1024)
             after_compact = HdfsFileInfo(file_count=8, total_size_bytes=1 * 1024 * 1024 * 1024)
             mock_hdfs.get_file_info.side_effect = [small_files, after_compact]
+            mock_hdfs.path_exists.return_value = False
             mock_hdfs.delete_path.return_value = True
+            mock_hdfs.rename_path.return_value = True
 
             mock_df = MagicMock()
             mock_df.count.return_value = 500000

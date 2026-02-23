@@ -75,6 +75,21 @@ class TestPrintCompactionReport:
         assert "65,000" in output
         assert "24" in output
         assert "120.5s" in output
+        assert "Gain:" in output
+        assert "65,000 -> 24" in output
+        assert "-100.0%" in output
+        assert "Avg size gain:" in output
+
+    def test_gain_section_not_shown_on_failure(self):
+        report = CompactionReport(
+            table_name="db.tbl",
+            status=CompactionStatus.FAILED,
+            before_file_count=1000,
+            after_file_count=0,
+            error="Row count mismatch",
+        )
+        output = print_compaction_report(report)
+        assert "Gain:" not in output
 
     def test_failed_report_with_error(self):
         report = CompactionReport(

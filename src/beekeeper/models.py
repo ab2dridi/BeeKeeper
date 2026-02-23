@@ -104,19 +104,6 @@ class BackupInfo:
 
 
 @dataclass
-class CompactionState:
-    """State of a compaction operation for a table or partition."""
-
-    table_info: TableInfo
-    status: CompactionStatus = CompactionStatus.PENDING
-    backup_info: BackupInfo | None = None
-    new_locations: dict[str, str] = field(default_factory=dict)
-    original_row_count: int | None = None
-    new_row_count: int | None = None
-    error: str | None = None
-
-
-@dataclass
 class CompactionReport:
     """Report of a compaction operation."""
 

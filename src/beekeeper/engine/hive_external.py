@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
@@ -36,7 +37,7 @@ class HiveExternalEngine(CompactionEngine):
         self._hdfs = HdfsClient(spark)
         self._analyzer = TableAnalyzer(spark, self._hdfs, config)
         self._backup_mgr = BackupManager(spark, config)
-        self._compactor = Compactor(spark, self._hdfs, config)
+        self._compactor = Compactor(spark, self._hdfs, config, self._backup_mgr)
 
     def analyze(self, database: str, table_name: str) -> TableInfo:
         """Analyze a table and return detailed information.
@@ -73,13 +74,27 @@ class HiveExternalEngine(CompactionEngine):
         """
         return self._compactor.compact_table(table_info, backup_info)
 
-    def rollback(self, database: str, table_name: str, backup_table: str | None = None) -> None:
+    def rollback(self, database: str, table_name: str, backup_table: str | None = None) -> BackupInfo:
         """Rollback a table to its pre-compaction state.
+
+        After a successful compaction the backup table points at an
+        ``__old_<ts>`` sibling directory that holds the original data.
+        Rollback:
+          1. Deletes the current (compacted) data at the table's location.
+          2. Renames ``__old_<ts>`` back to the original path.
+          3. Drops the backup table.
+
+        For backups created before the rename strategy (original_location has
+        no ``__old_`` suffix) the legacy ``ALTER TABLE SET LOCATION`` path is
+        used as a fallback.
 
         Args:
             database: Database name.
             table_name: Table name.
             backup_table: Specific backup table to use. If None, uses most recent.
+
+        Returns:
+            BackupInfo of the backup that was used.
 
         Raises:
             ValueError: If no backup is found.
@@ -93,21 +108,38 @@ class HiveExternalEngine(CompactionEngine):
             raise ValueError(msg)
 
         if backup_info.partition_locations:
-            for spec_str, original_location in backup_info.partition_locations.items():
-                parts = spec_str.split("/")
-                spec_sql = ", ".join(f"{p.split('=')[0]}='{p.split('=')[1]}'" for p in parts)
-                self._spark.sql(f"ALTER TABLE {full_name} PARTITION({spec_sql}) SET LOCATION '{original_location}'")
-                logger.info("Restored partition %s -> %s", spec_str, original_location)
+            for spec_str, backup_loc in backup_info.partition_locations.items():
+                if "__old_" in backup_loc:
+                    current_loc = re.sub(r"__old_\d+$", "", backup_loc.rstrip("/"))
+                    if self._hdfs.path_exists(current_loc):
+                        self._hdfs.delete_path(current_loc)
+                    self._hdfs.rename_path(backup_loc, current_loc)
+                    logger.info("Restored partition %s -> %s", backup_loc, current_loc)
+                else:
+                    # Legacy fallback: ALTER TABLE PARTITION SET LOCATION
+                    parts = spec_str.split("/")
+                    spec_sql = ", ".join(f"{p.split('=')[0]}='{p.split('=')[1]}'" for p in parts)
+                    self._spark.sql(f"ALTER TABLE {full_name} PARTITION({spec_sql}) SET LOCATION '{backup_loc}'")
+                    logger.info("Restored partition %s -> %s", spec_str, backup_loc)
         else:
-            self._spark.sql(f"ALTER TABLE {full_name} SET LOCATION '{backup_info.original_location}'")
-            logger.info("Restored table location -> %s", backup_info.original_location)
+            backup_loc = backup_info.original_location
+            if "__old_" in backup_loc:
+                current_loc = re.sub(r"__old_\d+$", "", backup_loc.rstrip("/"))
+                if self._hdfs.path_exists(current_loc):
+                    self._hdfs.delete_path(current_loc)
+                self._hdfs.rename_path(backup_loc, current_loc)
+                logger.info("Restored table location %s -> %s", backup_loc, current_loc)
+            else:
+                # Legacy fallback: ALTER TABLE SET LOCATION
+                self._spark.sql(f"ALTER TABLE {full_name} SET LOCATION '{backup_loc}'")
+                logger.info("Restored table location -> %s", backup_loc)
 
-        self._cleanup_compacted_files(backup_info)
         self._backup_mgr.drop_backup(database, backup_info.backup_table.split(".")[-1])
         logger.info("Rollback complete for %s", full_name)
+        return backup_info
 
     def cleanup(self, database: str, table_name: str, older_than_days: int | None = None) -> int:
-        """Clean up backup tables and compacted data.
+        """Clean up backup tables and associated ``__old_*`` data directories.
 
         Args:
             database: Database name.
@@ -134,10 +166,51 @@ class HiveExternalEngine(CompactionEngine):
                 except ValueError:
                     pass
 
+            # Delete __old_* directories tracked by this backup before dropping it
+            full_backup = f"{database}.{backup_name}"
+            self._delete_old_data_dirs(full_backup)
+
             self._backup_mgr.drop_backup(database, backup_name)
             cleaned += 1
 
         logger.info("Cleaned up %d backups for %s.%s", cleaned, database, table_name)
+        return cleaned
+
+    def cleanup_orphan_backups(self, database: str) -> int:
+        """Clean up backup tables whose original tables no longer exist.
+
+        Scans all tables in the database for backup tables (matching the
+        backup prefix pattern) and drops those whose original table is absent.
+
+        Args:
+            database: Database to scan.
+
+        Returns:
+            Number of orphan backups cleaned up.
+        """
+        tables = self._spark.sql(f"SHOW TABLES IN {database}").collect()
+        all_table_names = {row["tableName"] for row in tables}
+
+        cleaned = 0
+        pattern = re.compile(rf"^{re.escape(self._config.backup_prefix)}_(.+)_\d{{8}}_\d{{6}}$")
+        for tbl in list(all_table_names):
+            m = pattern.match(tbl)
+            if not m:
+                continue
+            original_name = m.group(1)
+            if original_name in all_table_names:
+                continue  # original still exists — not an orphan
+            logger.info(
+                "Cleaning up orphan backup %s.%s (original table '%s' no longer exists)",
+                database,
+                tbl,
+                original_name,
+            )
+            self._delete_old_data_dirs(f"{database}.{tbl}")
+            self._backup_mgr.drop_backup(database, tbl)
+            cleaned += 1
+
+        logger.info("Cleaned up %d orphan backups in %s", cleaned, database)
         return cleaned
 
     def list_tables(self, database: str) -> list[str]:
@@ -168,28 +241,43 @@ class HiveExternalEngine(CompactionEngine):
 
         return external_tables
 
-    def _cleanup_compacted_files(self, backup_info: BackupInfo) -> None:
-        """Delete compacted files that are no longer needed after rollback."""
-        # Compacted locations follow the pattern: <original>__compacted_<ts>
-        # We find and delete them by checking for sibling directories with __compacted_ suffix
-        if backup_info.partition_locations:
-            for _spec, location in backup_info.partition_locations.items():
-                self._delete_compacted_siblings(location)
-        else:
-            self._delete_compacted_siblings(backup_info.original_location)
+    def _delete_old_data_dirs(self, backup_table: str) -> None:
+        """Delete HDFS ``__old_*`` directories referenced by a backup table.
 
-    def _delete_compacted_siblings(self, original_location: str) -> None:
-        """Find and delete __compacted_ directories next to a location."""
-        parent = original_location.rsplit("/", 1)[0] if "/" in original_location else original_location
+        Checks both the table-level location (non-partitioned tables) and each
+        partition's location (partitioned tables) for ``__old_*`` paths.
+        """
+        # Non-partitioned: table-level location
         try:
-            hadoop_path = self._spark._jvm.org.apache.hadoop.fs.Path(parent)  # type: ignore[union-attr]
-            conf = self._spark._jsc.hadoopConfiguration()  # type: ignore[union-attr]
-            fs = hadoop_path.getFileSystem(conf)
-            statuses = fs.listStatus(hadoop_path)
-            for status in statuses:
-                path_name = status.getPath().getName()
-                if "__compacted_" in path_name:
-                    logger.info("Deleting compacted data: %s", status.getPath().toString())
-                    fs.delete(status.getPath(), True)
+            desc_rows = self._spark.sql(f"DESCRIBE FORMATTED {backup_table}").collect()
+            desc_map = {row[0].strip(): (row[1] or "").strip() for row in desc_rows if row[0]}
+            location = ""
+            for key in ("Location", "Location:"):
+                if key in desc_map and desc_map[key]:
+                    location = desc_map[key]
+                    break
+            if location and "__old_" in location and self._hdfs.path_exists(location):
+                logger.info("Deleting old data dir: %s", location)
+                self._hdfs.delete_path(location)
         except Exception:
-            logger.debug("Could not clean compacted siblings for %s", original_location)
+            logger.debug("Could not read top-level location for backup %s", backup_table)
+
+        # Partitioned: iterate over partition locations
+        try:
+            partitions = self._spark.sql(f"SHOW PARTITIONS {backup_table}").collect()
+            for row in partitions:
+                spec_str = row[0]
+                spec_parts = spec_str.split("/")
+                spec_sql = ", ".join(f"{p.split('=')[0]}='{p.split('=')[1]}'" for p in spec_parts)
+                part_desc = self._spark.sql(f"DESCRIBE FORMATTED {backup_table} PARTITION({spec_sql})").collect()
+                part_map = {r[0].strip(): (r[1] or "").strip() for r in part_desc if r[0]}
+                part_loc = ""
+                for key in ("Location", "Location:"):
+                    if key in part_map and part_map[key]:
+                        part_loc = part_map[key]
+                        break
+                if part_loc and "__old_" in part_loc and self._hdfs.path_exists(part_loc):
+                    logger.info("Deleting old partition data dir: %s", part_loc)
+                    self._hdfs.delete_path(part_loc)
+        except Exception:
+            logger.debug("No partitions or could not read partition locations for backup %s", backup_table)

@@ -9,6 +9,7 @@ import click
 from beekeeper import __version__
 from beekeeper.config import BeekeeperConfig
 from beekeeper.core.reporter import print_analysis_report, print_compaction_report
+from beekeeper.models import CompactionStatus
 
 
 def _build_config(ctx: click.Context) -> BeekeeperConfig:
@@ -119,6 +120,7 @@ def compact(ctx: click.Context, **kwargs: str | None) -> None:
     tables = _resolve_tables(config, engine)
 
     click.echo(f"Processing {len(tables)} table(s)...\n")
+    any_failed = False
     for database, table_name in tables:
         table_info = engine.analyze(database, table_name)
         print_analysis_report(table_info)
@@ -132,12 +134,23 @@ def compact(ctx: click.Context, **kwargs: str | None) -> None:
             continue
 
         click.echo(f"  Creating backup for {table_info.full_name}...")
-        backup_info = engine.create_backup(table_info)
+        try:
+            backup_info = engine.create_backup(table_info)
+        except Exception as e:
+            click.echo(f"  Error creating backup for {table_info.full_name}: {e}", err=True)
+            any_failed = True
+            continue
         click.echo(f"  Backup created: {backup_info.backup_table}")
 
         click.echo(f"  Compacting {table_info.full_name}...")
         report = engine.compact(table_info, backup_info)
         print_compaction_report(report)
+
+        if report.status == CompactionStatus.FAILED:
+            any_failed = True
+
+    if any_failed:
+        sys.exit(1)
 
 
 @main.command()
@@ -159,8 +172,8 @@ def rollback(ctx: click.Context, **kwargs: str | None) -> None:
     engine = _get_engine(config)
 
     click.echo(f"Rolling back {table}...")
-    engine.rollback(database, table_name)
-    click.echo(f"Rollback complete for {table}.")
+    used_backup = engine.rollback(database, table_name)
+    click.echo(f"Rollback complete for {table} (backup used: {used_backup.backup_table}).")
 
 
 @main.command()
@@ -195,6 +208,7 @@ def cleanup(ctx: click.Context, **kwargs: str | None) -> None:
         for table_name in table_names:
             cleaned = engine.cleanup(config.database, table_name, older_than_days)
             total_cleaned += cleaned
+        total_cleaned += engine.cleanup_orphan_backups(config.database)
         click.echo(f"Cleaned {total_cleaned} backup(s) in database {config.database}.")
 
     else:

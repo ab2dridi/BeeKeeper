@@ -107,3 +107,25 @@ class TestHdfsClient:
         mock_path.getFileSystem.return_value = mock_fs
 
         assert hdfs_client.mkdirs("hdfs:///data/test/new") is True
+
+    def test_rename_path(self, hdfs_client, mock_spark):
+        mock_fs = MagicMock()
+        mock_fs.rename.return_value = True
+
+        mock_path = MagicMock()
+        mock_spark._jvm.org.apache.hadoop.fs.Path.return_value = mock_path
+        mock_path.getFileSystem.return_value = mock_fs
+
+        assert hdfs_client.rename_path("hdfs:///data/src", "hdfs:///data/dst") is True
+        mock_fs.rename.assert_called_once()
+
+    def test_rename_path_failure_raises(self, hdfs_client, mock_spark):
+        mock_fs = MagicMock()
+        mock_fs.rename.return_value = False  # HDFS signals failure
+
+        mock_path = MagicMock()
+        mock_spark._jvm.org.apache.hadoop.fs.Path.return_value = mock_path
+        mock_path.getFileSystem.return_value = mock_fs
+
+        with pytest.raises(RuntimeError, match="HDFS rename failed"):
+            hdfs_client.rename_path("hdfs:///data/src", "hdfs:///data/dst")

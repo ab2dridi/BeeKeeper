@@ -136,12 +136,21 @@ class TestCompactCommand:
 class TestRollbackCommand:
     @patch("beekeeper.cli._get_engine")
     def test_rollback(self, mock_get_engine):
+        from beekeeper.models import BackupInfo
+
         mock_engine = MagicMock()
         mock_get_engine.return_value = mock_engine
+        mock_engine.rollback.return_value = BackupInfo(
+            original_table="mydb.tbl",
+            backup_table="mydb.__bkp_tbl_20240101_120000",
+            original_location="hdfs:///data",
+            timestamp=MagicMock(),
+        )
 
         runner = CliRunner()
         result = runner.invoke(main, ["rollback", "--table", "mydb.tbl"])
         assert result.exit_code == 0
+        assert "__bkp_tbl_20240101_120000" in result.output
         mock_engine.rollback.assert_called_once_with("mydb", "tbl")
 
     def test_rollback_missing_table(self):
@@ -180,6 +189,20 @@ class TestCleanupCommand:
         runner = CliRunner()
         result = runner.invoke(main, ["cleanup"])
         assert result.exit_code != 0 or "Error" in result.output
+
+    @patch("beekeeper.cli._get_engine")
+    def test_cleanup_database_includes_orphans(self, mock_get_engine):
+        mock_engine = MagicMock()
+        mock_get_engine.return_value = mock_engine
+        mock_engine.list_tables.return_value = ["t1"]
+        mock_engine.cleanup.return_value = 1
+        mock_engine.cleanup_orphan_backups.return_value = 2
+
+        runner = CliRunner()
+        result = runner.invoke(main, ["cleanup", "--database", "mydb"])
+        assert result.exit_code == 0
+        assert "Cleaned 3 backup(s)" in result.output
+        mock_engine.cleanup_orphan_backups.assert_called_once_with("mydb")
 
 
 class TestAnalyzeWithTables:
@@ -236,6 +259,111 @@ class TestCompactWithBackup:
         assert result.exit_code == 0
         mock_engine.create_backup.assert_called_once()
         mock_engine.compact.assert_called_once()
+
+
+class TestCompactErrorHandling:
+    @patch("beekeeper.cli._get_engine")
+    def test_compact_backup_failure_exits_nonzero(self, mock_get_engine):
+        from beekeeper.models import FileFormat, TableInfo
+
+        mock_engine = MagicMock()
+        mock_get_engine.return_value = mock_engine
+        mock_engine.analyze.return_value = TableInfo(
+            database="mydb",
+            table_name="tbl",
+            location="hdfs:///data",
+            file_format=FileFormat.PARQUET,
+            total_file_count=65000,
+            total_size_bytes=3 * 1024 * 1024 * 1024,
+            needs_compaction=True,
+        )
+        mock_engine.create_backup.side_effect = RuntimeError("Metastore unavailable")
+
+        runner = CliRunner()
+        result = runner.invoke(main, ["compact", "--table", "mydb.tbl"])
+        assert result.exit_code != 0
+        assert "Error creating backup" in result.output
+        mock_engine.compact.assert_not_called()
+
+    @patch("beekeeper.cli._get_engine")
+    def test_compact_failed_report_exits_nonzero(self, mock_get_engine):
+        from beekeeper.models import BackupInfo, CompactionReport, CompactionStatus, FileFormat, TableInfo
+
+        mock_engine = MagicMock()
+        mock_get_engine.return_value = mock_engine
+        mock_engine.analyze.return_value = TableInfo(
+            database="mydb",
+            table_name="tbl",
+            location="hdfs:///data",
+            file_format=FileFormat.PARQUET,
+            total_file_count=65000,
+            total_size_bytes=3 * 1024 * 1024 * 1024,
+            needs_compaction=True,
+        )
+        mock_engine.create_backup.return_value = BackupInfo(
+            original_table="mydb.tbl",
+            backup_table="mydb.__bkp_tbl_20240101_120000",
+            original_location="hdfs:///data",
+            timestamp=MagicMock(),
+        )
+        mock_engine.compact.return_value = CompactionReport(
+            table_name="mydb.tbl",
+            status=CompactionStatus.FAILED,
+            error="Row count mismatch",
+        )
+
+        runner = CliRunner()
+        result = runner.invoke(main, ["compact", "--table", "mydb.tbl"])
+        assert result.exit_code != 0
+
+    @patch("beekeeper.cli._get_engine")
+    def test_compact_partial_failure_exits_nonzero(self, mock_get_engine):
+        """If one table fails and another succeeds, exit code is still non-zero."""
+        from beekeeper.models import BackupInfo, CompactionReport, CompactionStatus, FileFormat, TableInfo
+
+        mock_engine = MagicMock()
+        mock_get_engine.return_value = mock_engine
+        mock_engine.list_tables.return_value = ["t1", "t2"]
+
+        good_table = TableInfo(
+            database="mydb",
+            table_name="t1",
+            location="hdfs:///data/t1",
+            file_format=FileFormat.PARQUET,
+            total_file_count=100,
+            needs_compaction=True,
+        )
+        bad_table = TableInfo(
+            database="mydb",
+            table_name="t2",
+            location="hdfs:///data/t2",
+            file_format=FileFormat.PARQUET,
+            total_file_count=200,
+            needs_compaction=True,
+        )
+        mock_engine.analyze.side_effect = [good_table, bad_table]
+        mock_engine.create_backup.side_effect = [
+            BackupInfo(
+                original_table="mydb.t1",
+                backup_table="mydb.__bkp_t1_20240101_120000",
+                original_location="hdfs:///data/t1",
+                timestamp=MagicMock(),
+            ),
+            BackupInfo(
+                original_table="mydb.t2",
+                backup_table="mydb.__bkp_t2_20240101_120000",
+                original_location="hdfs:///data/t2",
+                timestamp=MagicMock(),
+            ),
+        ]
+        mock_engine.compact.side_effect = [
+            CompactionReport(table_name="mydb.t1", status=CompactionStatus.COMPLETED),
+            CompactionReport(table_name="mydb.t2", status=CompactionStatus.FAILED, error="HDFS error"),
+        ]
+
+        runner = CliRunner()
+        result = runner.invoke(main, ["compact", "--database", "mydb"])
+        assert result.exit_code != 0
 
 
 class TestCompactWithConfigFile:
