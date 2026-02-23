@@ -1,0 +1,280 @@
+"""Tests for beekeeper.cli module."""
+
+from __future__ import annotations
+
+from unittest.mock import MagicMock, patch
+
+import pytest
+from click.testing import CliRunner
+
+from beekeeper.cli import _parse_duration, main
+
+
+class TestParseDate:
+    def test_valid_days(self):
+        assert _parse_duration("7d") == 7
+        assert _parse_duration("30d") == 30
+        assert _parse_duration("1d") == 1
+
+    def test_invalid_format(self):
+        from click import BadParameter
+
+        with pytest.raises(BadParameter):
+            _parse_duration("7h")
+
+    def test_invalid_number(self):
+        from click import BadParameter
+
+        with pytest.raises(BadParameter):
+            _parse_duration("abcd")
+
+
+class TestCLIGroup:
+    def test_version(self):
+        runner = CliRunner()
+        result = runner.invoke(main, ["--version"])
+        assert result.exit_code == 0
+        assert "0.1.0" in result.output
+
+    def test_help(self):
+        runner = CliRunner()
+        result = runner.invoke(main, ["--help"])
+        assert result.exit_code == 0
+        assert "Beekeeper" in result.output
+
+
+class TestAnalyzeCommand:
+    @patch("beekeeper.cli._get_engine")
+    def test_analyze_single_table(self, mock_get_engine):
+        from beekeeper.models import FileFormat, TableInfo
+
+        mock_engine = MagicMock()
+        mock_get_engine.return_value = mock_engine
+        mock_engine.analyze.return_value = TableInfo(
+            database="mydb",
+            table_name="tbl",
+            location="hdfs:///data",
+            file_format=FileFormat.PARQUET,
+            total_file_count=100,
+            total_size_bytes=1024,
+        )
+
+        runner = CliRunner()
+        result = runner.invoke(main, ["analyze", "--table", "mydb.tbl"])
+        assert result.exit_code == 0
+        assert "1 table(s)" in result.output
+
+    @patch("beekeeper.cli._get_engine")
+    def test_analyze_database(self, mock_get_engine):
+        from beekeeper.models import FileFormat, TableInfo
+
+        mock_engine = MagicMock()
+        mock_get_engine.return_value = mock_engine
+        mock_engine.list_tables.return_value = ["t1", "t2"]
+        mock_engine.analyze.return_value = TableInfo(
+            database="mydb",
+            table_name="t1",
+            location="hdfs:///data",
+            file_format=FileFormat.PARQUET,
+        )
+
+        runner = CliRunner()
+        result = runner.invoke(main, ["analyze", "--database", "mydb"])
+        assert result.exit_code == 0
+        assert "2 table(s)" in result.output
+
+    def test_analyze_no_args(self):
+        runner = CliRunner()
+        result = runner.invoke(main, ["analyze"])
+        # Should fail with error (no engine, but would need --database or --table)
+        assert result.exit_code != 0 or "Error" in result.output
+
+
+class TestCompactCommand:
+    @patch("beekeeper.cli._get_engine")
+    def test_compact_dry_run(self, mock_get_engine):
+        from beekeeper.models import FileFormat, TableInfo
+
+        mock_engine = MagicMock()
+        mock_get_engine.return_value = mock_engine
+        mock_engine.analyze.return_value = TableInfo(
+            database="mydb",
+            table_name="tbl",
+            location="hdfs:///data",
+            file_format=FileFormat.PARQUET,
+            total_file_count=65000,
+            total_size_bytes=3 * 1024 * 1024 * 1024,
+            needs_compaction=True,
+        )
+
+        runner = CliRunner()
+        result = runner.invoke(main, ["compact", "--table", "mydb.tbl", "--dry-run"])
+        assert result.exit_code == 0
+        assert "DRY RUN" in result.output
+        mock_engine.create_backup.assert_not_called()
+
+    @patch("beekeeper.cli._get_engine")
+    def test_compact_skip_no_compaction(self, mock_get_engine):
+        from beekeeper.models import FileFormat, TableInfo
+
+        mock_engine = MagicMock()
+        mock_get_engine.return_value = mock_engine
+        mock_engine.analyze.return_value = TableInfo(
+            database="mydb",
+            table_name="tbl",
+            location="hdfs:///data",
+            file_format=FileFormat.PARQUET,
+            needs_compaction=False,
+        )
+
+        runner = CliRunner()
+        result = runner.invoke(main, ["compact", "--table", "mydb.tbl"])
+        assert result.exit_code == 0
+        assert "no compaction needed" in result.output
+
+
+class TestRollbackCommand:
+    @patch("beekeeper.cli._get_engine")
+    def test_rollback(self, mock_get_engine):
+        mock_engine = MagicMock()
+        mock_get_engine.return_value = mock_engine
+
+        runner = CliRunner()
+        result = runner.invoke(main, ["rollback", "--table", "mydb.tbl"])
+        assert result.exit_code == 0
+        mock_engine.rollback.assert_called_once_with("mydb", "tbl")
+
+    def test_rollback_missing_table(self):
+        runner = CliRunner()
+        result = runner.invoke(main, ["rollback"])
+        assert result.exit_code != 0
+
+
+class TestCleanupCommand:
+    @patch("beekeeper.cli._get_engine")
+    def test_cleanup_table(self, mock_get_engine):
+        mock_engine = MagicMock()
+        mock_get_engine.return_value = mock_engine
+        mock_engine.cleanup.return_value = 2
+
+        runner = CliRunner()
+        result = runner.invoke(main, ["cleanup", "--table", "mydb.tbl"])
+        assert result.exit_code == 0
+        assert "Cleaned 2 backup(s)" in result.output
+
+    @patch("beekeeper.cli._get_engine")
+    def test_cleanup_database_with_older_than(self, mock_get_engine):
+        mock_engine = MagicMock()
+        mock_get_engine.return_value = mock_engine
+        mock_engine.list_tables.return_value = ["t1"]
+        mock_engine.cleanup.return_value = 1
+
+        runner = CliRunner()
+        result = runner.invoke(main, ["cleanup", "--database", "mydb", "--older-than", "7d"])
+        assert result.exit_code == 0
+        mock_engine.cleanup.assert_called_once_with("mydb", "t1", 7)
+
+    @patch("beekeeper.cli._get_engine")
+    def test_cleanup_no_args(self, mock_get_engine):
+        mock_get_engine.return_value = MagicMock()
+        runner = CliRunner()
+        result = runner.invoke(main, ["cleanup"])
+        assert result.exit_code != 0 or "Error" in result.output
+
+
+class TestAnalyzeWithTables:
+    @patch("beekeeper.cli._get_engine")
+    def test_analyze_comma_separated_tables(self, mock_get_engine):
+        from beekeeper.models import FileFormat, TableInfo
+
+        mock_engine = MagicMock()
+        mock_get_engine.return_value = mock_engine
+        mock_engine.analyze.return_value = TableInfo(
+            database="mydb",
+            table_name="t1",
+            location="hdfs:///data",
+            file_format=FileFormat.PARQUET,
+        )
+
+        runner = CliRunner()
+        result = runner.invoke(main, ["analyze", "--tables", "mydb.t1,mydb.t2"])
+        assert result.exit_code == 0
+        assert "2 table(s)" in result.output
+
+
+class TestCompactWithBackup:
+    @patch("beekeeper.cli._get_engine")
+    def test_compact_full_workflow(self, mock_get_engine):
+        from beekeeper.models import BackupInfo, CompactionReport, CompactionStatus, FileFormat, TableInfo
+
+        mock_engine = MagicMock()
+        mock_get_engine.return_value = mock_engine
+        mock_engine.analyze.return_value = TableInfo(
+            database="mydb",
+            table_name="tbl",
+            location="hdfs:///data",
+            file_format=FileFormat.PARQUET,
+            total_file_count=65000,
+            total_size_bytes=3 * 1024 * 1024 * 1024,
+            needs_compaction=True,
+        )
+        mock_engine.create_backup.return_value = BackupInfo(
+            original_table="mydb.tbl",
+            backup_table="mydb.__bkp_tbl_20240101_120000",
+            original_location="hdfs:///data",
+            timestamp=MagicMock(),
+        )
+        mock_engine.compact.return_value = CompactionReport(
+            table_name="mydb.tbl",
+            status=CompactionStatus.COMPLETED,
+            before_file_count=65000,
+            after_file_count=24,
+        )
+
+        runner = CliRunner()
+        result = runner.invoke(main, ["compact", "--table", "mydb.tbl"])
+        assert result.exit_code == 0
+        mock_engine.create_backup.assert_called_once()
+        mock_engine.compact.assert_called_once()
+
+
+class TestCompactWithConfigFile:
+    @patch("beekeeper.cli._get_engine")
+    def test_compact_with_yaml_config(self, mock_get_engine, tmp_path):
+        from beekeeper.models import FileFormat, TableInfo
+
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("block_size_mb: 256\ndry_run: true\n")
+
+        mock_engine = MagicMock()
+        mock_get_engine.return_value = mock_engine
+        mock_engine.analyze.return_value = TableInfo(
+            database="mydb",
+            table_name="tbl",
+            location="hdfs:///data",
+            file_format=FileFormat.PARQUET,
+            total_file_count=100,
+            total_size_bytes=1024,
+            needs_compaction=True,
+        )
+
+        runner = CliRunner()
+        result = runner.invoke(main, ["compact", "--table", "mydb.tbl", "--config-file", str(config_file), "--dry-run"])
+        assert result.exit_code == 0
+        assert "DRY RUN" in result.output
+
+
+class TestResolveTablesErrors:
+    @patch("beekeeper.cli._get_engine")
+    def test_invalid_table_format(self, mock_get_engine):
+        mock_get_engine.return_value = MagicMock()
+        runner = CliRunner()
+        result = runner.invoke(main, ["analyze", "--table", "no_dot_table"])
+        assert result.exit_code != 0 or "Error" in result.output
+
+    @patch("beekeeper.cli._get_engine")
+    def test_invalid_tables_format(self, mock_get_engine):
+        mock_get_engine.return_value = MagicMock()
+        runner = CliRunner()
+        result = runner.invoke(main, ["analyze", "--tables", "mydb.t1,bad_table"])
+        assert result.exit_code != 0 or "Error" in result.output
