@@ -24,4 +24,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **YAML configuration** — all parameters configurable via a YAML file; CLI flags override YAML values.
 - **Python 3.9+ support** — compatible with Cloudera CDP 7.1.9, Hortonworks HDP, and vanilla Hadoop distributions.
 
-[0.0.1]: https://github.com/ab2dridi/lakekeeper/releases/tag/v0.0.1
+[0.0.1]: https://github.com/ab2dridi/Lakekeeper/releases/tag/v0.0.1

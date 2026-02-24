@@ -43,10 +43,10 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/ab2dridi/lakekeeper"
-Repository = "https://github.com/ab2dridi/lakekeeper"
-Changelog = "https://github.com/ab2dridi/lakekeeper/blob/main/CHANGELOG.md"
-"Bug Tracker" = "https://github.com/ab2dridi/lakekeeper/issues"
+Homepage = "https://github.com/ab2dridi/Lakekeeper"
+Repository = "https://github.com/ab2dridi/Lakekeeper"
+Changelog = "https://github.com/ab2dridi/Lakekeeper/blob/main/CHANGELOG.md"
+"Bug Tracker" = "https://github.com/ab2dridi/Lakekeeper/issues"
 
 [project.scripts]
 lakekeeper = "lakekeeper.cli:main"
