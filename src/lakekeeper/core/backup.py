@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime
 from typing import TYPE_CHECKING
 
@@ -50,10 +51,27 @@ class BackupManager:
 
         logger.info("Creating zero-copy backup: %s", full_backup)
 
+        # SparkSQL does not support `CREATE EXTERNAL TABLE … LIKE`.
+        # Use SHOW CREATE TABLE to get the original DDL and substitute the name.
+        ddl_rows = self._spark.sql(f"SHOW CREATE TABLE {full_original}").collect()
+        original_ddl = ddl_rows[0][0]
+
+        # SHOW CREATE TABLE returns backtick-quoted identifiers, e.g.
+        # CREATE EXTERNAL TABLE `db`.`table` (…)
+        # Replace only the first occurrence (the table being defined).
+        backup_ddl = re.sub(
+            r"(?i)(CREATE\s+(?:EXTERNAL\s+)?TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?)"
+            r"(`[^`]+`\s*\.\s*`[^`]+`|\S+)",
+            lambda m: m.group(1) + full_backup,
+            original_ddl,
+            count=1,
+        )
+
+        self._spark.sql(backup_ddl)
+
+        # Ensure the backup table never deletes HDFS data when dropped.
         self._spark.sql(
-            f"CREATE EXTERNAL TABLE {full_backup} LIKE {full_original} "
-            f"LOCATION '{table_info.location}' "
-            f"TBLPROPERTIES ('external.table.purge'='false')"
+            f"ALTER TABLE {full_backup} SET TBLPROPERTIES ('external.table.purge'='false')"
         )
 
         partition_locations: dict[str, str] = {}

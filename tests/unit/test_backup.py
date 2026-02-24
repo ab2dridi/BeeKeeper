@@ -16,6 +16,15 @@ class TestBackupManager:
         return BackupManager(mock_spark, config)
 
     def test_create_backup_non_partitioned(self, backup_mgr, mock_spark, sample_table_info):
+        # Mock SHOW CREATE TABLE response (SparkSQL returns backtick-quoted identifiers)
+        sample_ddl = (
+            "CREATE EXTERNAL TABLE `mydb`.`events` (`id` INT) "
+            "STORED AS PARQUET "
+            "LOCATION 'hdfs:///data/mydb/events'"
+        )
+        ddl_row = MagicMock(__getitem__=lambda self, i, ddl=sample_ddl: ddl)
+        mock_spark.sql.return_value.collect.return_value = [ddl_row]
+
         backup_info = backup_mgr.create_backup(sample_table_info)
 
         assert backup_info.original_table == "mydb.events"
@@ -24,15 +33,28 @@ class TestBackupManager:
         assert backup_info.partition_locations == {}
         assert isinstance(backup_info.timestamp, datetime)
 
-        # Verify CREATE EXTERNAL TABLE was called with purge protection
-        calls = mock_spark.sql.call_args_list
-        create_call = [c for c in calls if "CREATE EXTERNAL TABLE" in str(c)]
-        assert len(create_call) == 1
-        create_sql = str(create_call[0])
-        assert "external.table.purge" in create_sql
-        assert "'false'" in create_sql
+        calls = [str(c) for c in mock_spark.sql.call_args_list]
+        # SHOW CREATE TABLE was called first
+        assert any("SHOW CREATE TABLE" in c for c in calls)
+        # Modified DDL with backup table name was executed
+        assert any("__bkp_events_" in c for c in calls)
+        # Purge protection via ALTER TABLE SET TBLPROPERTIES (separate call)
+        alter_tblprops = [c for c in calls if "SET TBLPROPERTIES" in c]
+        assert len(alter_tblprops) == 1
+        assert "external.table.purge" in alter_tblprops[0]
+        assert "'false'" in alter_tblprops[0]
 
     def test_create_backup_partitioned(self, backup_mgr, mock_spark, sample_partitioned_table_info):
+        # Mock SHOW CREATE TABLE response
+        sample_ddl = (
+            "CREATE EXTERNAL TABLE `mydb`.`logs` (`id` INT) "
+            "PARTITIONED BY (`year` STRING, `month` STRING) "
+            "STORED AS ORC "
+            "LOCATION 'hdfs:///data/mydb/logs'"
+        )
+        ddl_row = MagicMock(__getitem__=lambda self, i, ddl=sample_ddl: ddl)
+        mock_spark.sql.return_value.collect.return_value = [ddl_row]
+
         backup_info = backup_mgr.create_backup(sample_partitioned_table_info)
 
         assert backup_info.original_table == "mydb.logs"
@@ -41,16 +63,19 @@ class TestBackupManager:
         assert len(backup_info.partition_locations) == 1
         assert "year=2024/month=01" in backup_info.partition_locations
 
-        # Verify CREATE EXTERNAL TABLE was called with purge protection
         calls = [str(c) for c in mock_spark.sql.call_args_list]
-        create_calls = [c for c in calls if "CREATE EXTERNAL TABLE" in c]
-        assert len(create_calls) == 1
-        assert "external.table.purge" in create_calls[0]
-        assert "'false'" in create_calls[0]
-
-        # Verify ALTER TABLE ADD PARTITION was called
-        alter_calls = [c for c in calls if "ADD PARTITION" in c]
-        assert len(alter_calls) == 1
+        # SHOW CREATE TABLE was called first
+        assert any("SHOW CREATE TABLE" in c for c in calls)
+        # Modified DDL with backup table name was executed
+        assert any("__bkp_logs_" in c for c in calls)
+        # Purge protection via ALTER TABLE SET TBLPROPERTIES (separate call)
+        alter_tblprops = [c for c in calls if "SET TBLPROPERTIES" in c]
+        assert len(alter_tblprops) == 1
+        assert "external.table.purge" in alter_tblprops[0]
+        assert "'false'" in alter_tblprops[0]
+        # ALTER TABLE ADD PARTITION for the one partition needing compaction
+        add_partition_calls = [c for c in calls if "ADD PARTITION" in c]
+        assert len(add_partition_calls) == 1
 
     def test_find_latest_backup_found(self, backup_mgr, mock_spark):
         table_rows = [
