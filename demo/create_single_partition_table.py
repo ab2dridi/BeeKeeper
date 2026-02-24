@@ -12,7 +12,7 @@ Usage on a Kerberized cluster:
         --master yarn --deploy-mode cluster \
         --principal user@REALM.COM \
         --keytab /etc/security/keytabs/user.keytab \
-        demo/create_demo_table.py \
+        demo/create_single_partition_table.py \
         --database mydb
 
 Optional arguments:

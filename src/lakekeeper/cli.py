@@ -35,10 +35,24 @@ def _maybe_submit(config: LakekeeperConfig) -> None:
         return
     if os.environ.get(_SUBMITTED_ENV):
         return
+    import dataclasses
+
     from lakekeeper.utils.spark import build_spark_submit_command
 
+    # In --deploy-mode cluster the driver runs in a YARN container on a remote
+    # node, so the env var set on the edge node is not inherited.  Pass it
+    # explicitly as a YARN application-master environment variable so the guard
+    # works regardless of deploy mode.
+    submit_cfg = dataclasses.replace(
+        config.spark_submit,
+        extra_conf={
+            **config.spark_submit.extra_conf,
+            f"spark.yarn.appMasterEnv.{_SUBMITTED_ENV}": "1",
+        },
+    )
+
     lakekeeper_args = sys.argv[1:]
-    cmd = build_spark_submit_command(config.spark_submit, lakekeeper_args)
+    cmd = build_spark_submit_command(submit_cfg, lakekeeper_args)
     click.echo(f"Launching via spark-submit: {' '.join(cmd)}")
     env = os.environ.copy()
     env[_SUBMITTED_ENV] = "1"
