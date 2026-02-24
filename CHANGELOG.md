@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.0.4] - 2026-02-24
+
+### Fixed
+
+- **Wrong partition location on Hive 3 / CDP** — `DESCRIBE FORMATTED … PARTITION(…)` on CDP Hive 3 emits the `Location` field **twice**: the partition-specific path first (under `# Detailed Partition Information`) and the table-level path second (under `# Detailed Table Information`). A plain dict comprehension kept the last value, so every partition's `location` resolved to the table root — causing all compaction renames to target the table root instead of individual partition directories, destroying the partition structure on the first iteration. Fixed by building the metadata map with **first-occurrence semantics** in `analyzer.py::_get_partition_location`, `backup.py::_get_backup_partition_locations`, and `hive_external.py::_delete_old_data_dirs`. Applies to 2-, 3-, and 4-level partition hierarchies.
+
+[0.0.4]: https://github.com/ab2dridi/Lakekeeper/releases/tag/v0.0.4
+
+---
+
 ## [0.0.3] - 2026-02-24
 
 ### Fixed

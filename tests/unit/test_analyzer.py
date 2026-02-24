@@ -313,6 +313,257 @@ class TestTableAnalyzer:
         assert result.partitions[0].location == "hdfs:///data/mydb/events_2p/date=2024-01-01/ref=A"
 
 
+    def test_three_level_partition_detected_from_describe(self, analyzer, mock_spark, mock_hdfs_client):
+        """Three-level partition (year+month+day) detected correctly from DESCRIBE FORMATTED."""
+        desc_rows = [
+            _make_row("Location", "hdfs:///data/mydb/logs_3p", None),
+            _make_row("InputFormat", "org.apache.hadoop.hive.ql.io.parquet.MapRedParquetInputFormat", None),
+            _make_row("# Partition Information", None, None),
+            _make_row("# col_name", "data_type", "comment"),
+            _make_row("year", "string", ""),
+            _make_row("month", "string", ""),
+            _make_row("day", "string", ""),
+            _make_row("# Another Section", None, None),
+        ]
+        partition_rows = [
+            MagicMock(__getitem__=lambda self, i, v=("year=2024/month=01/day=15",): v[i]),
+            MagicMock(__getitem__=lambda self, i, v=("year=2024/month=01/day=16",): v[i]),
+        ]
+        partition_desc_a = [
+            _make_row("Location", "hdfs:///data/mydb/logs_3p/year=2024/month=01/day=15", None),
+            _make_row("InputFormat", "org.apache.hadoop.hive.ql.io.parquet.MapRedParquetInputFormat", None),
+        ]
+        partition_desc_b = [
+            _make_row("Location", "hdfs:///data/mydb/logs_3p/year=2024/month=01/day=16", None),
+            _make_row("InputFormat", "org.apache.hadoop.hive.ql.io.parquet.MapRedParquetInputFormat", None),
+        ]
+        mock_spark.sql.return_value.collect.side_effect = [
+            desc_rows,
+            partition_rows,    # SHOW PARTITIONS
+            partition_desc_a,  # DESCRIBE FORMATTED PARTITION (day=15)
+            partition_desc_b,  # DESCRIBE FORMATTED PARTITION (day=16)
+        ]
+        mock_hdfs_client.get_file_info.side_effect = [
+            HdfsFileInfo(file_count=800, total_size_bytes=80 * 1024 * 1024),
+            HdfsFileInfo(file_count=2, total_size_bytes=200 * 1024 * 1024),
+        ]
+        result = analyzer.analyze_table("mydb", "logs_3p")
+        assert result.is_partitioned is True
+        assert result.partition_columns == ["year", "month", "day"]
+        assert len(result.partitions) == 2
+        assert result.partitions[0].location == "hdfs:///data/mydb/logs_3p/year=2024/month=01/day=15"
+        assert result.partitions[1].location == "hdfs:///data/mydb/logs_3p/year=2024/month=01/day=16"
+        assert result.partitions[0].needs_compaction is True   # 800 small files
+        assert result.partitions[1].needs_compaction is False  # 2 large files
+
+    def test_four_level_partition_detected_from_describe(self, analyzer, mock_spark, mock_hdfs_client):
+        """Four-level partition (year+month+day+ref) detected correctly from DESCRIBE FORMATTED."""
+        desc_rows = [
+            _make_row("Location", "hdfs:///data/mydb/events_4p", None),
+            _make_row("InputFormat", "org.apache.hadoop.hive.ql.io.parquet.MapRedParquetInputFormat", None),
+            _make_row("# Partition Information", None, None),
+            _make_row("# col_name", "data_type", "comment"),
+            _make_row("year", "string", ""),
+            _make_row("month", "string", ""),
+            _make_row("day", "string", ""),
+            _make_row("ref", "string", ""),
+            _make_row("# Another Section", None, None),
+        ]
+        partition_rows = [
+            MagicMock(__getitem__=lambda self, i, v=("year=2024/month=01/day=15/ref=A",): v[i]),
+            MagicMock(__getitem__=lambda self, i, v=("year=2024/month=01/day=15/ref=B",): v[i]),
+            MagicMock(__getitem__=lambda self, i, v=("year=2024/month=01/day=16/ref=A",): v[i]),
+        ]
+        partition_desc_a = [
+            _make_row("Location", "hdfs:///data/mydb/events_4p/year=2024/month=01/day=15/ref=A", None),
+            _make_row("InputFormat", "org.apache.hadoop.hive.ql.io.parquet.MapRedParquetInputFormat", None),
+        ]
+        partition_desc_b = [
+            _make_row("Location", "hdfs:///data/mydb/events_4p/year=2024/month=01/day=15/ref=B", None),
+            _make_row("InputFormat", "org.apache.hadoop.hive.ql.io.parquet.MapRedParquetInputFormat", None),
+        ]
+        partition_desc_c = [
+            _make_row("Location", "hdfs:///data/mydb/events_4p/year=2024/month=01/day=16/ref=A", None),
+            _make_row("InputFormat", "org.apache.hadoop.hive.ql.io.parquet.MapRedParquetInputFormat", None),
+        ]
+        mock_spark.sql.return_value.collect.side_effect = [
+            desc_rows,
+            partition_rows,    # SHOW PARTITIONS
+            partition_desc_a,
+            partition_desc_b,
+            partition_desc_c,
+        ]
+        mock_hdfs_client.get_file_info.return_value = HdfsFileInfo(
+            file_count=10, total_size_bytes=100 * 1024 * 1024
+        )
+        result = analyzer.analyze_table("mydb", "events_4p")
+        assert result.is_partitioned is True
+        assert result.partition_columns == ["year", "month", "day", "ref"]
+        assert len(result.partitions) == 3
+        assert result.partitions[0].location == "hdfs:///data/mydb/events_4p/year=2024/month=01/day=15/ref=A"
+        assert result.partitions[1].location == "hdfs:///data/mydb/events_4p/year=2024/month=01/day=15/ref=B"
+        assert result.partitions[2].location == "hdfs:///data/mydb/events_4p/year=2024/month=01/day=16/ref=A"
+
+    def test_three_level_partition_fallback_via_show_partitions(self, analyzer, mock_spark, mock_hdfs_client):
+        """3-level partition detected via SHOW PARTITIONS when DESCRIBE FORMATTED omits section."""
+        desc_rows = [
+            _make_row("Location", "hdfs:///data/mydb/logs_3p", None),
+            _make_row("Table Type", "EXTERNAL_TABLE", None),
+            _make_row("InputFormat", "org.apache.hadoop.hive.ql.io.parquet.MapRedParquetInputFormat", None),
+            # Deliberately NO "# Partition Information" section
+        ]
+        partition_rows = [
+            MagicMock(__getitem__=lambda self, i, v=("year=2024/month=01/day=15",): v[i]),
+            MagicMock(__getitem__=lambda self, i, v=("year=2024/month=02/day=01",): v[i]),
+        ]
+        partition_desc_a = [
+            _make_row("Location", "hdfs:///data/mydb/logs_3p/year=2024/month=01/day=15", None),
+            _make_row("InputFormat", "org.apache.hadoop.hive.ql.io.parquet.MapRedParquetInputFormat", None),
+        ]
+        partition_desc_b = [
+            _make_row("Location", "hdfs:///data/mydb/logs_3p/year=2024/month=02/day=01", None),
+            _make_row("InputFormat", "org.apache.hadoop.hive.ql.io.parquet.MapRedParquetInputFormat", None),
+        ]
+        # Call sequence:
+        # 1. DESCRIBE FORMATTED   (main)
+        # 2. SHOW PARTITIONS      (fallback detection)
+        # 3. SHOW PARTITIONS      (_analyze_partitions)
+        # 4. DESCRIBE FORMATTED PARTITION (day=15)
+        # 5. DESCRIBE FORMATTED PARTITION (day=01)
+        mock_spark.sql.return_value.collect.side_effect = [
+            desc_rows,
+            partition_rows,    # fallback detection
+            partition_rows,    # _analyze_partitions
+            partition_desc_a,
+            partition_desc_b,
+        ]
+        mock_hdfs_client.get_file_info.side_effect = [
+            HdfsFileInfo(file_count=500, total_size_bytes=50 * 1024 * 1024),
+            HdfsFileInfo(file_count=500, total_size_bytes=50 * 1024 * 1024),
+        ]
+        result = analyzer.analyze_table("mydb", "logs_3p")
+        assert result.is_partitioned is True
+        assert result.partition_columns == ["year", "month", "day"]
+        assert len(result.partitions) == 2
+
+    def test_four_level_partition_fallback_via_show_partitions(self, analyzer, mock_spark, mock_hdfs_client):
+        """4-level partition detected via SHOW PARTITIONS when DESCRIBE FORMATTED omits section."""
+        desc_rows = [
+            _make_row("Location", "hdfs:///data/mydb/events_4p", None),
+            _make_row("Table Type", "EXTERNAL_TABLE", None),
+            _make_row("InputFormat", "org.apache.hadoop.hive.ql.io.parquet.MapRedParquetInputFormat", None),
+            # No partition section
+        ]
+        partition_rows = [
+            MagicMock(__getitem__=lambda self, i, v=("year=2024/month=01/day=15/ref=A",): v[i]),
+        ]
+        partition_desc = [
+            _make_row("Location", "hdfs:///data/mydb/events_4p/year=2024/month=01/day=15/ref=A", None),
+            _make_row("InputFormat", "org.apache.hadoop.hive.ql.io.parquet.MapRedParquetInputFormat", None),
+        ]
+        mock_spark.sql.return_value.collect.side_effect = [
+            desc_rows,
+            partition_rows,  # fallback detection
+            partition_rows,  # _analyze_partitions
+            partition_desc,
+        ]
+        mock_hdfs_client.get_file_info.return_value = HdfsFileInfo(
+            file_count=50, total_size_bytes=50 * 1024 * 1024
+        )
+        result = analyzer.analyze_table("mydb", "events_4p")
+        assert result.is_partitioned is True
+        assert result.partition_columns == ["year", "month", "day", "ref"]
+        assert len(result.partitions) == 1
+
+    def test_first_occurrence_location_three_level_partition(self, analyzer, mock_spark, mock_hdfs_client):
+        """First-occurrence Location fix works correctly for a 3-level partition.
+
+        DESCRIBE FORMATTED PARTITION emits Location twice on Hive 3 / CDP:
+        first = partition path (correct), second = table root (wrong).
+        Verify we return the partition path for year/month/day partitions.
+        """
+        desc_rows = [
+            _make_row("Location", "hdfs:///data/mydb/logs_3p", None),
+            _make_row("InputFormat", "org.apache.hadoop.hive.ql.io.parquet.MapRedParquetInputFormat", None),
+            _make_row("# Partition Information", None, None),
+            _make_row("# col_name", "data_type", "comment"),
+            _make_row("year", "string", ""),
+            _make_row("month", "string", ""),
+            _make_row("day", "string", ""),
+            _make_row("# Another Section", None, None),
+        ]
+        partition_list = [
+            MagicMock(__getitem__=lambda self, i, v=("year=2024/month=01/day=15",): v[i]),
+        ]
+        # Dual-Location DESCRIBE FORMATTED PARTITION output (CDP Hive 3 behaviour)
+        partition_desc_rows = [
+            _make_row("# Detailed Partition Information", None, None),
+            _make_row("Location", "hdfs:///data/mydb/logs_3p/year=2024/month=01/day=15", None),
+            _make_row("# Detailed Table Information", None, None),
+            _make_row("Location", "hdfs:///data/mydb/logs_3p", None),  # table root — must NOT win
+        ]
+        mock_spark.sql.return_value.collect.side_effect = [
+            desc_rows,
+            partition_list,       # SHOW PARTITIONS
+            partition_desc_rows,  # DESCRIBE FORMATTED PARTITION
+        ]
+        mock_hdfs_client.get_file_info.return_value = HdfsFileInfo(
+            file_count=600, total_size_bytes=60 * 1024 * 1024
+        )
+        result = analyzer.analyze_table("mydb", "logs_3p")
+        assert result.is_partitioned is True
+        assert len(result.partitions) == 1
+        assert result.partitions[0].location == "hdfs:///data/mydb/logs_3p/year=2024/month=01/day=15"
+
+    def test_first_occurrence_location_four_level_partition(self, analyzer, mock_spark, mock_hdfs_client):
+        """First-occurrence Location fix works correctly for a 4-level partition.
+
+        Verifies that when DESCRIBE FORMATTED PARTITION emits Location twice,
+        we take the partition-specific path (deeper) and not the table root.
+        """
+        desc_rows = [
+            _make_row("Location", "hdfs:///data/mydb/events_4p", None),
+            _make_row("InputFormat", "org.apache.hadoop.hive.ql.io.parquet.MapRedParquetInputFormat", None),
+            _make_row("# Partition Information", None, None),
+            _make_row("# col_name", "data_type", "comment"),
+            _make_row("year", "string", ""),
+            _make_row("month", "string", ""),
+            _make_row("day", "string", ""),
+            _make_row("ref", "string", ""),
+            _make_row("# Another Section", None, None),
+        ]
+        partition_list = [
+            MagicMock(__getitem__=lambda self, i, v=("year=2024/month=01/day=15/ref=A",): v[i]),
+            MagicMock(__getitem__=lambda self, i, v=("year=2024/month=01/day=15/ref=B",): v[i]),
+        ]
+        partition_desc_a = [
+            _make_row("# Detailed Partition Information", None, None),
+            _make_row("Location", "hdfs:///data/mydb/events_4p/year=2024/month=01/day=15/ref=A", None),
+            _make_row("# Detailed Table Information", None, None),
+            _make_row("Location", "hdfs:///data/mydb/events_4p", None),  # table root — must NOT win
+        ]
+        partition_desc_b = [
+            _make_row("# Detailed Partition Information", None, None),
+            _make_row("Location", "hdfs:///data/mydb/events_4p/year=2024/month=01/day=15/ref=B", None),
+            _make_row("# Detailed Table Information", None, None),
+            _make_row("Location", "hdfs:///data/mydb/events_4p", None),  # table root — must NOT win
+        ]
+        mock_spark.sql.return_value.collect.side_effect = [
+            desc_rows,
+            partition_list,    # SHOW PARTITIONS
+            partition_desc_a,
+            partition_desc_b,
+        ]
+        mock_hdfs_client.get_file_info.return_value = HdfsFileInfo(
+            file_count=10, total_size_bytes=100 * 1024 * 1024
+        )
+        result = analyzer.analyze_table("mydb", "events_4p")
+        assert result.is_partitioned is True
+        assert len(result.partitions) == 2
+        assert result.partitions[0].location == "hdfs:///data/mydb/events_4p/year=2024/month=01/day=15/ref=A"
+        assert result.partitions[1].location == "hdfs:///data/mydb/events_4p/year=2024/month=01/day=15/ref=B"
+
+
 class TestParsePartitionSpec:
     def test_single_partition(self):
         result = TableAnalyzer._parse_partition_spec("year=2024")
@@ -321,6 +572,14 @@ class TestParsePartitionSpec:
     def test_multiple_partitions(self):
         result = TableAnalyzer._parse_partition_spec("year=2024/month=01")
         assert result == {"year": "2024", "month": "01"}
+
+    def test_three_level_partition(self):
+        result = TableAnalyzer._parse_partition_spec("year=2024/month=01/day=15")
+        assert result == {"year": "2024", "month": "01", "day": "15"}
+
+    def test_four_level_partition(self):
+        result = TableAnalyzer._parse_partition_spec("year=2024/month=01/day=15/ref=A")
+        assert result == {"year": "2024", "month": "01", "day": "15", "ref": "A"}
 
     def test_empty_value(self):
         result = TableAnalyzer._parse_partition_spec("key=")
