@@ -59,7 +59,7 @@ pip install lakekeeper
 For development:
 
 ```bash
-git clone https://github.com/ab2dridi/BeeKeeper.git
+git clone https://github.com/ab2dridi/lakekeeper.git
 cd BeeKeeper
 pip install ".[dev]"
 ```
@@ -399,7 +399,7 @@ path already exists. Resolve manually before retrying:
 ## Development
 
 ```bash
-git clone https://github.com/ab2dridi/BeeKeeper.git
+git clone https://github.com/ab2dridi/lakekeeper.git
 cd BeeKeeper
 pip install ".[dev]"
 
