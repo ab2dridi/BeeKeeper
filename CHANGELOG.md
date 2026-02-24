@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.0.5] - 2026-02-24
+
+### Fixed
+
+- **`--config-file` not found on YARN driver in cluster deploy mode** — in `--deploy-mode cluster` the driver runs on a remote YARN node that cannot access local edge-node files. When `--config-file` points to a local path, lakekeeper now automatically adds the file to `spark-submit --files` so YARN ships it to the driver container's working directory, and rewrites the argument to just the basename. HDFS paths are left untouched; `client` deploy mode is unaffected.
+- **Empty partitions incorrectly marked for compaction** — a partition with 0 files had `avg_file_size = 0 < threshold`, which set `needs_compaction = True`. This triggered a pointless rename-swap with no data to process. Empty partitions are now detected and skipped.
+- **Single-file partitions incorrectly marked for compaction** — a partition with exactly 1 file that is smaller than the compaction threshold was marked for compaction. `coalesce(1 → 1)` is a no-op rename-swap with no benefit. Compaction now requires `file_count > 1`.
+
+### Improved
+
+- **Single `SHOW PARTITIONS` call in fallback path** — when `DESCRIBE FORMATTED` omits the partition-column section, the `SHOW PARTITIONS` fallback previously issued the query twice (once for column detection, once for partition enumeration). The rows are now fetched once and reused, halving the Metastore round-trips for this path.
+- **Single timestamp per compaction run** — all `__old_TS` and `__compact_tmp_TS` directories produced by a single `compact_table` call now share the same timestamp, making them identifiable as a group for cleanup and debugging.
+
+[0.0.5]: https://github.com/ab2dridi/Lakekeeper/releases/tag/v0.0.5
+
+---
+
 ## [0.0.4] - 2026-02-24
 
 ### Fixed

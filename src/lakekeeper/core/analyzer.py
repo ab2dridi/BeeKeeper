@@ -87,7 +87,19 @@ class TableAnalyzer:
             # '# Partition Information' block from DESCRIBE FORMATTED output.
             # SHOW PARTITIONS raises AnalysisException on non-partitioned tables,
             # so catching that exception is a reliable disambiguation.
-            fallback_cols = self._detect_partition_columns_fallback(full_name)
+            # Fetch the rows once and reuse them in _analyze_partitions to avoid
+            # a redundant second round-trip to the Metastore.
+            try:
+                fallback_rows = self._spark.sql(f"SHOW PARTITIONS {full_name}").collect()
+            except Exception:
+                fallback_rows = []
+
+            if fallback_rows:
+                first_spec = fallback_rows[0][0]
+                fallback_cols = [part.split("=")[0] for part in first_spec.split("/") if "=" in part]
+            else:
+                fallback_cols = []
+
             if fallback_cols:
                 logger.warning(
                     "Partition columns for %s not found in DESCRIBE FORMATTED output; "
@@ -98,7 +110,7 @@ class TableAnalyzer:
                 )
                 table_info.is_partitioned = True
                 table_info.partition_columns = fallback_cols
-                self._analyze_partitions(table_info)
+                self._analyze_partitions(table_info, partition_rows=fallback_rows)
             else:
                 self._analyze_non_partitioned(table_info)
 
@@ -181,29 +193,57 @@ class TableAnalyzer:
         table_info.total_file_count = file_info.file_count
         table_info.total_size_bytes = file_info.total_size_bytes
 
-    def _analyze_partitions(self, table_info: TableInfo) -> None:
-        """Analyze all partitions of a partitioned table."""
+    def _analyze_partitions(self, table_info: TableInfo, partition_rows: list | None = None) -> None:
+        """Analyze all partitions of a partitioned table.
+
+        Args:
+            table_info: Table information to populate.
+            partition_rows: Pre-fetched SHOW PARTITIONS rows. If None, the query
+                is issued here. Passing pre-fetched rows avoids a redundant
+                Metastore round-trip when the caller already ran SHOW PARTITIONS
+                for partition-column detection (fallback path).
+        """
         full_name = table_info.full_name
-        partitions_rows = self._spark.sql(f"SHOW PARTITIONS {full_name}").collect()
+        if partition_rows is None:
+            partition_rows = self._spark.sql(f"SHOW PARTITIONS {full_name}").collect()
 
         total_files = 0
         total_size = 0
 
-        for row in partitions_rows:
+        for row in partition_rows:
             partition_spec_str = row[0]
             spec = self._parse_partition_spec(partition_spec_str)
 
             partition_location = self._get_partition_location(full_name, spec)
             file_info = self._hdfs.get_file_info(partition_location)
 
+            if file_info.file_count == 0:
+                # Empty partition — nothing to compact; skip without logging noise.
+                logger.debug("Partition %s of %s is empty, skipping.", partition_spec_str, full_name)
+                partition_info = PartitionInfo(
+                    spec=spec,
+                    location=partition_location,
+                    file_count=0,
+                    total_size_bytes=0,
+                    needs_compaction=False,
+                    target_files=0,
+                )
+                table_info.partitions.append(partition_info)
+                continue
+
             target_files = max(1, math.ceil(file_info.total_size_bytes / self._config.block_size_bytes))
+
+            # A single-file partition cannot be reduced further regardless of size:
+            # coalesce(1 → 1) would be a no-op rename-swap with no benefit.
+            has_small_files = file_info.avg_file_size_bytes < self._config.compaction_threshold_bytes
+            needs_compaction = has_small_files and file_info.file_count > 1
 
             partition_info = PartitionInfo(
                 spec=spec,
                 location=partition_location,
                 file_count=file_info.file_count,
                 total_size_bytes=file_info.total_size_bytes,
-                needs_compaction=file_info.avg_file_size_bytes < self._config.compaction_threshold_bytes,
+                needs_compaction=needs_compaction,
                 target_files=target_files,
             )
 

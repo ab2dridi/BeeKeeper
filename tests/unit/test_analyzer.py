@@ -215,16 +215,14 @@ class TestTableAnalyzer:
             _make_row("Location", "hdfs:///data/mydb/events_2p/date=2024-01-01/ref=B", None),
             _make_row("InputFormat", "org.apache.hadoop.hive.ql.io.parquet.MapRedParquetInputFormat", None),
         ]
-        # Call sequence:
+        # Call sequence (SHOW PARTITIONS called once — rows reused for _analyze_partitions):
         # 1. DESCRIBE FORMATTED           (main)
-        # 2. SHOW PARTITIONS              (fallback detection)
-        # 3. SHOW PARTITIONS              (_analyze_partitions)
-        # 4. DESCRIBE FORMATTED PARTITION (ref=A location)
-        # 5. DESCRIBE FORMATTED PARTITION (ref=B location)
+        # 2. SHOW PARTITIONS              (fallback detection + _analyze_partitions)
+        # 3. DESCRIBE FORMATTED PARTITION (ref=A location)
+        # 4. DESCRIBE FORMATTED PARTITION (ref=B location)
         mock_spark.sql.return_value.collect.side_effect = [
             desc_rows,
-            partition_rows,   # fallback
-            partition_rows,   # _analyze_partitions
+            partition_rows,   # fallback — reused for _analyze_partitions
             partition_desc_a,
             partition_desc_b,
         ]
@@ -424,16 +422,14 @@ class TestTableAnalyzer:
             _make_row("Location", "hdfs:///data/mydb/logs_3p/year=2024/month=02/day=01", None),
             _make_row("InputFormat", "org.apache.hadoop.hive.ql.io.parquet.MapRedParquetInputFormat", None),
         ]
-        # Call sequence:
+        # Call sequence (SHOW PARTITIONS called once — rows reused for _analyze_partitions):
         # 1. DESCRIBE FORMATTED   (main)
-        # 2. SHOW PARTITIONS      (fallback detection)
-        # 3. SHOW PARTITIONS      (_analyze_partitions)
-        # 4. DESCRIBE FORMATTED PARTITION (day=15)
-        # 5. DESCRIBE FORMATTED PARTITION (day=01)
+        # 2. SHOW PARTITIONS      (fallback detection + _analyze_partitions)
+        # 3. DESCRIBE FORMATTED PARTITION (day=15)
+        # 4. DESCRIBE FORMATTED PARTITION (day=01)
         mock_spark.sql.return_value.collect.side_effect = [
             desc_rows,
-            partition_rows,    # fallback detection
-            partition_rows,    # _analyze_partitions
+            partition_rows,    # fallback — reused for _analyze_partitions
             partition_desc_a,
             partition_desc_b,
         ]
@@ -461,10 +457,10 @@ class TestTableAnalyzer:
             _make_row("Location", "hdfs:///data/mydb/events_4p/year=2024/month=01/day=15/ref=A", None),
             _make_row("InputFormat", "org.apache.hadoop.hive.ql.io.parquet.MapRedParquetInputFormat", None),
         ]
+        # SHOW PARTITIONS called once — rows reused for _analyze_partitions
         mock_spark.sql.return_value.collect.side_effect = [
             desc_rows,
-            partition_rows,  # fallback detection
-            partition_rows,  # _analyze_partitions
+            partition_rows,  # fallback — reused for _analyze_partitions
             partition_desc,
         ]
         mock_hdfs_client.get_file_info.return_value = HdfsFileInfo(
@@ -562,6 +558,99 @@ class TestTableAnalyzer:
         assert len(result.partitions) == 2
         assert result.partitions[0].location == "hdfs:///data/mydb/events_4p/year=2024/month=01/day=15/ref=A"
         assert result.partitions[1].location == "hdfs:///data/mydb/events_4p/year=2024/month=01/day=15/ref=B"
+
+    def test_empty_partition_skipped(self, analyzer, mock_spark, mock_hdfs_client):
+        """A partition with 0 files must never be marked for compaction.
+
+        An empty partition has nothing to coalesce. Compacting it would
+        perform a pointless rename-swap and could confuse downstream tools.
+        """
+        desc_rows = [
+            _make_row("Location", "hdfs:///data/mydb/events", None),
+            _make_row("InputFormat", "org.apache.hadoop.hive.ql.io.parquet.MapRedParquetInputFormat", None),
+            _make_row("# Partition Information", None, None),
+            _make_row("# col_name", "data_type", "comment"),
+            _make_row("date", "string", ""),
+            _make_row("# Another Section", None, None),
+        ]
+        partition_rows = [
+            MagicMock(__getitem__=lambda self, i, v=("date=2024-01-01",): v[i]),
+            MagicMock(__getitem__=lambda self, i, v=("date=2024-01-02",): v[i]),
+        ]
+        partition_desc_a = [
+            _make_row("Location", "hdfs:///data/mydb/events/date=2024-01-01", None),
+            _make_row("InputFormat", "org.apache.hadoop.hive.ql.io.parquet.MapRedParquetInputFormat", None),
+        ]
+        partition_desc_b = [
+            _make_row("Location", "hdfs:///data/mydb/events/date=2024-01-02", None),
+            _make_row("InputFormat", "org.apache.hadoop.hive.ql.io.parquet.MapRedParquetInputFormat", None),
+        ]
+        mock_spark.sql.return_value.collect.side_effect = [
+            desc_rows,
+            partition_rows,
+            partition_desc_a,
+            partition_desc_b,
+        ]
+        # First partition: empty; second: 200 small files
+        mock_hdfs_client.get_file_info.side_effect = [
+            HdfsFileInfo(file_count=0, total_size_bytes=0),           # empty — must be skipped
+            HdfsFileInfo(file_count=200, total_size_bytes=2 * 1024 * 1024),  # needs compaction
+        ]
+        result = analyzer.analyze_table("mydb", "events")
+        assert len(result.partitions) == 2
+        assert result.partitions[0].needs_compaction is False, "Empty partition must not need compaction"
+        assert result.partitions[0].file_count == 0
+        assert result.partitions[1].needs_compaction is True
+        # Table-level totals exclude empty partitions
+        assert result.total_file_count == 200
+        assert result.total_size_bytes == 2 * 1024 * 1024
+
+    def test_single_file_partition_not_compacted(self, analyzer, mock_spark, mock_hdfs_client):
+        """A partition with exactly 1 file must never be marked for compaction.
+
+        Even if that file is smaller than the threshold, coalesce(1 → 1)
+        is a no-op rename-swap with no benefit.
+        """
+        desc_rows = [
+            _make_row("Location", "hdfs:///data/mydb/events", None),
+            _make_row("InputFormat", "org.apache.hadoop.hive.ql.io.parquet.MapRedParquetInputFormat", None),
+            _make_row("# Partition Information", None, None),
+            _make_row("# col_name", "data_type", "comment"),
+            _make_row("date", "string", ""),
+            _make_row("# Another Section", None, None),
+        ]
+        partition_rows = [
+            MagicMock(__getitem__=lambda self, i, v=("date=2024-01-01",): v[i]),
+            MagicMock(__getitem__=lambda self, i, v=("date=2024-01-02",): v[i]),
+        ]
+        partition_desc_a = [
+            _make_row("Location", "hdfs:///data/mydb/events/date=2024-01-01", None),
+            _make_row("InputFormat", "org.apache.hadoop.hive.ql.io.parquet.MapRedParquetInputFormat", None),
+        ]
+        partition_desc_b = [
+            _make_row("Location", "hdfs:///data/mydb/events/date=2024-01-02", None),
+            _make_row("InputFormat", "org.apache.hadoop.hive.ql.io.parquet.MapRedParquetInputFormat", None),
+        ]
+        mock_spark.sql.return_value.collect.side_effect = [
+            desc_rows,
+            partition_rows,
+            partition_desc_a,
+            partition_desc_b,
+        ]
+        # Both partitions have 1 file, one tiny and one large
+        mock_hdfs_client.get_file_info.side_effect = [
+            HdfsFileInfo(file_count=1, total_size_bytes=5 * 1024),        # 5 KB — tiny but 1 file
+            HdfsFileInfo(file_count=1, total_size_bytes=500 * 1024 * 1024),  # 500 MB — large, 1 file
+        ]
+        result = analyzer.analyze_table("mydb", "events")
+        assert len(result.partitions) == 2
+        assert result.partitions[0].needs_compaction is False, (
+            "Single tiny file must not trigger compaction (no files to merge with)"
+        )
+        assert result.partitions[1].needs_compaction is False, (
+            "Single large file must not trigger compaction"
+        )
+        assert result.needs_compaction is False
 
 
 class TestParsePartitionSpec:
