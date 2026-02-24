@@ -83,7 +83,24 @@ class TableAnalyzer:
         if table_info.is_partitioned:
             self._analyze_partitions(table_info)
         else:
-            self._analyze_non_partitioned(table_info)
+            # Safety net: some Hive 3 / SparkSQL 3.x versions omit the
+            # '# Partition Information' block from DESCRIBE FORMATTED output.
+            # SHOW PARTITIONS raises AnalysisException on non-partitioned tables,
+            # so catching that exception is a reliable disambiguation.
+            fallback_cols = self._detect_partition_columns_fallback(full_name)
+            if fallback_cols:
+                logger.warning(
+                    "Partition columns for %s not found in DESCRIBE FORMATTED output; "
+                    "detected via SHOW PARTITIONS fallback: %s. "
+                    "Treating as a partitioned table.",
+                    full_name,
+                    fallback_cols,
+                )
+                table_info.is_partitioned = True
+                table_info.partition_columns = fallback_cols
+                self._analyze_partitions(table_info)
+            else:
+                self._analyze_non_partitioned(table_info)
 
         self._determine_compaction_need(table_info)
         logger.info(
@@ -134,6 +151,29 @@ class TableAnalyzer:
                     partition_cols.append(col_name)
 
         return partition_cols
+
+    def _detect_partition_columns_fallback(self, full_name: str) -> list[str]:
+        """Detect partition columns via SHOW PARTITIONS when DESCRIBE FORMATTED misses them.
+
+        On some Hive 3 / SparkSQL 3.x combinations the '# Partition Information' block
+        is absent from DESCRIBE FORMATTED output.  SHOW PARTITIONS raises an
+        AnalysisException for non-partitioned tables, so the try/except reliably
+        distinguishes the two cases.
+
+        Returns column names in partition order, e.g. ['date', 'ref'], or [] if the
+        table is not partitioned or the query fails for any other reason.
+        """
+        try:
+            rows = self._spark.sql(f"SHOW PARTITIONS {full_name}").collect()
+            if rows:
+                # Spec format: "date=2024-01-01/ref=A"
+                first_spec = rows[0][0]
+                cols = [part.split("=")[0] for part in first_spec.split("/") if "=" in part]
+                if cols:
+                    return cols
+        except Exception:
+            logger.debug("SHOW PARTITIONS failed for %s — table is not partitioned", full_name)
+        return []
 
     def _analyze_non_partitioned(self, table_info: TableInfo) -> None:
         """Analyze a non-partitioned table."""

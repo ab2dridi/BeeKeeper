@@ -74,6 +74,9 @@ class HdfsClient:
             file_path = file_status.getPath().getName()
             if not file_path.startswith("_") and not file_path.startswith("."):
                 file_count += 1
+                # getLen() returns the logical file size (data bytes only).
+                # It does NOT include the HDFS replication factor.
+                # A 50 MB file with replication=3 reports 50 MB here, not 150 MB.
                 total_size += file_status.getLen()
 
         logger.debug("HDFS path %s: %d files, %d bytes", path, file_count, total_size)
