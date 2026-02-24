@@ -3,36 +3,42 @@ r"""Create a fragmented Hive external table for lakekeeper demo/testing.
 Generates a partitioned table (date) with many small files per partition,
 simulating a real incremental pipeline that has accumulated small-file debt.
 
+Prerequisites:
+    - The target database must already exist (created by an admin).
+    - You must have CREATE TABLE and write privileges on that database.
+
 Usage on a Kerberized cluster:
     spark-submit \
-        --master yarn --deploy-mode client \
+        --master yarn --deploy-mode cluster \
         --principal user@REALM.COM \
         --keytab /etc/security/keytabs/user.keytab \
-        demo/create_demo_table.py
+        demo/create_demo_table.py \
+        --database mydb
 
 Optional arguments:
-    --database          Target Hive database (default: lakekeeper_demo)
-    --table             Table name (default: events)
+    --database          Existing Hive database (required, no default)
+    --table             Table name (default: lakekeeper_events)
+    --location          HDFS path for the table (default: derived from DESCRIBE DATABASE)
     --files-per-part    Number of small files per date partition (default: 200)
     --rows-per-part     Number of rows per date partition (default: 100000)
     --days              Number of date partitions to create (default: 3)
-    --warehouse-path    Override HDFS warehouse dir (auto-detected by default)
 
 After the script completes, run:
-    lakekeeper analyze --table lakekeeper_demo.events
-    lakekeeper compact --table lakekeeper_demo.events
-    lakekeeper analyze --table lakekeeper_demo.events   # verify result
+    lakekeeper analyze --table <database>.lakekeeper_events
+    lakekeeper compact --table <database>.lakekeeper_events
+    lakekeeper analyze --table <database>.lakekeeper_events   # verify result
 """
 
 from __future__ import annotations
 
 import argparse
 import logging
+import sys
 from datetime import date, timedelta
 
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F  # noqa: N812
-from pyspark.sql.types import DoubleType, LongType, StringType, StructField, StructType
+from pyspark.sql.types import LongType
 
 logging.basicConfig(
     level=logging.INFO,
@@ -41,33 +47,25 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-SCHEMA = StructType(
-    [
-        StructField("event_id", LongType(), nullable=False),
-        StructField("user_id", LongType(), nullable=False),
-        StructField("event_type", StringType(), nullable=False),
-        StructField("amount", DoubleType(), nullable=True),
-    ]
-)
-
-
-def _get_conf(spark: SparkSession, *keys: str, default: str = "") -> str:
-    """Try multiple Spark/Hive config keys and return the first non-empty value."""
-    for key in keys:
-        try:
-            value = spark.conf.get(key)
-            if value:
-                return value
-        except Exception:  # noqa: BLE001
-            logger.debug("Config key not found: %s", key)
-    return default
-
 
 def parse_args() -> argparse.Namespace:
     """Parse command-line arguments."""
     p = argparse.ArgumentParser(description="Create a fragmented Hive external table for lakekeeper demo")
-    p.add_argument("--database", default="lakekeeper_demo", help="Hive database name")
-    p.add_argument("--table", default="events", help="Table name")
+    p.add_argument(
+        "--database",
+        required=True,
+        help="Existing Hive database where the demo table will be created",
+    )
+    p.add_argument(
+        "--table",
+        default="lakekeeper_events",
+        help="Demo table name (default: lakekeeper_events)",
+    )
+    p.add_argument(
+        "--location",
+        default=None,
+        help=("HDFS path for the external table. Default: <db_location>/<table> (derived from DESCRIBE DATABASE)."),
+    )
     p.add_argument(
         "--files-per-part",
         type=int,
@@ -86,12 +84,40 @@ def parse_args() -> argparse.Namespace:
         default=3,
         help="Number of date partitions (default: 3)",
     )
-    p.add_argument(
-        "--warehouse-path",
-        default=None,
-        help="Override HDFS warehouse directory (auto-detected from cluster config by default)",
-    )
     return p.parse_args()
+
+
+def _get_db_location(spark: SparkSession, database: str) -> str | None:
+    """Return the HDFS location of an existing Hive database."""
+    try:
+        rows = spark.sql(f"DESCRIBE DATABASE `{database}`").collect()
+        for row in rows:
+            key = (row[0] or "").strip().lower().rstrip(":")
+            if key == "location":
+                value = (row[1] or "").strip()
+                if value:
+                    return value
+    except Exception:  # noqa: BLE001
+        logger.debug("Could not read location for database %s", database)
+    return None
+
+
+def _check_database_exists(spark: SparkSession, database: str) -> None:
+    """Abort with a clear message if the database does not exist."""
+    try:
+        matches = [row[0] for row in spark.sql(f"SHOW DATABASES LIKE '{database}'").collect()]
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Failed to list databases: %s", exc)
+        sys.exit(1)
+
+    if database not in matches:
+        logger.error(
+            "Database '%s' does not exist or you lack access to it. "
+            "Ask your cluster admin to create it, then re-run with --database %s.",
+            database,
+            database,
+        )
+        sys.exit(1)
 
 
 def build_event_df(spark: SparkSession, n_rows: int, n_files: int):
@@ -126,24 +152,26 @@ def main() -> None:
     spark = SparkSession.builder.appName(f"lakekeeper-demo-{args.table}").enableHiveSupport().getOrCreate()
     spark.sparkContext.setLogLevel("WARN")
 
-    # Detect warehouse directory from cluster configuration
-    if args.warehouse_path:
-        warehouse_dir = args.warehouse_path
-    else:
-        warehouse_dir = _get_conf(
-            spark,
-            "hive.metastore.warehouse.external.dir",  # CDP 7.x external warehouse
-            "hive.metastore.warehouse.dir",  # classic Hive warehouse
-            "spark.sql.warehouse.dir",  # Spark warehouse
-            default="hdfs:///warehouse",
-        )
+    # Verify the database exists before doing anything
+    _check_database_exists(spark, args.database)
 
-    table_location = f"{warehouse_dir}/{args.database}.db/{args.table}"
-    logger.info("Warehouse dir : %s", warehouse_dir)
+    # Resolve table HDFS location
+    if args.location:
+        table_location = args.location
+    else:
+        db_location = _get_db_location(spark, args.database)
+        if not db_location:
+            logger.error(
+                "Could not auto-detect the HDFS location for database '%s'. "
+                "Specify it explicitly with --location hdfs:///path/to/table.",
+                args.database,
+            )
+            sys.exit(1)
+        table_location = f"{db_location}/{args.table}"
+
     logger.info("Table location: %s", table_location)
 
-    # Setup database and table
-    spark.sql(f"CREATE DATABASE IF NOT EXISTS `{args.database}`")
+    # Create (or recreate) the demo table
     spark.sql(f"DROP TABLE IF EXISTS `{args.database}`.`{args.table}`")
     spark.sql(f"""
         CREATE EXTERNAL TABLE `{args.database}`.`{args.table}` (
@@ -163,14 +191,12 @@ def main() -> None:
     dates = [(date.today() - timedelta(days=args.days - 1 - i)).isoformat() for i in range(args.days)]
 
     total_files = 0
-    total_rows = 0
 
     for d in dates:
         partition_path = f"{table_location}/date={d}"
         df = build_event_df(spark, args.rows_per_part, args.files_per_part)
         df.write.mode("overwrite").parquet(partition_path)
         total_files += args.files_per_part
-        total_rows += args.rows_per_part
         logger.info(
             "Written partition date=%s  →  %d files  (%d rows)",
             d,
