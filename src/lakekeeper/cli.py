@@ -32,6 +32,55 @@ def _build_config(ctx: click.Context) -> LakekeeperConfig:
     return config.merge_cli_overrides(**params)
 
 
+def _extract_config_file_for_cluster(
+    args: list[str], deploy_mode: str
+) -> tuple[list[str], list[str]]:
+    """Rewrite a local --config-file path so it works on a remote YARN driver.
+
+    In ``--deploy-mode cluster`` the YARN driver runs on a remote node and
+    cannot access local edge-node files.  When ``--config-file`` points to a
+    local file this function:
+
+    1. Adds the file path to the returned *extra_files* list so it gets
+       distributed via ``spark-submit --files`` to the driver container's
+       working directory.
+    2. Rewrites the argument to just the basename, which is where YARN places
+       distributed files.
+
+    HDFS paths (``hdfs://…``) are left untouched — the driver can read them
+    directly.  In ``client`` deploy mode the driver runs locally so no
+    rewriting is needed.
+    """
+    if deploy_mode != "cluster":
+        return args, []
+
+    import pathlib
+
+    args = list(args)
+    extra_files: list[str] = []
+
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        # "--config-file PATH" or "-c PATH"
+        if arg in ("--config-file", "-c") and i + 1 < len(args):
+            path = args[i + 1]
+            if not path.startswith("hdfs://") and os.path.isfile(path):
+                args[i + 1] = pathlib.Path(path).name
+                extra_files.append(path)
+            break
+        # "--config-file=PATH"
+        if arg.startswith("--config-file="):
+            path = arg.split("=", 1)[1]
+            if not path.startswith("hdfs://") and os.path.isfile(path):
+                args[i] = f"--config-file={pathlib.Path(path).name}"
+                extra_files.append(path)
+            break
+        i += 1
+
+    return args, extra_files
+
+
 def _maybe_submit(config: LakekeeperConfig) -> None:
     """Launch via spark-submit if configured and not already running inside a submission."""
     if not config.spark_submit.enabled:
@@ -54,7 +103,18 @@ def _maybe_submit(config: LakekeeperConfig) -> None:
         },
     )
 
-    lakekeeper_args = sys.argv[1:]
+    # In --deploy-mode cluster, the YARN driver cannot read local edge-node
+    # files.  Ship the config file via --files and rewrite the CLI arg to use
+    # just the basename so the remote driver finds it in its working directory.
+    lakekeeper_args, extra_cfg_files = _extract_config_file_for_cluster(
+        sys.argv[1:], submit_cfg.deploy_mode
+    )
+    if extra_cfg_files:
+        submit_cfg = dataclasses.replace(
+            submit_cfg,
+            extra_files=list(submit_cfg.extra_files or []) + extra_cfg_files,
+        )
+
     cmd = build_spark_submit_command(submit_cfg, lakekeeper_args)
     click.echo(f"Launching via spark-submit: {' '.join(cmd)}")
     env = os.environ.copy()

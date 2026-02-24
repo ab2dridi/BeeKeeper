@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from click.testing import CliRunner
 
-from lakekeeper.cli import _parse_duration, main
+from lakekeeper.cli import _extract_config_file_for_cluster, _parse_duration, main
 
 
 class TestParseDate:
@@ -539,3 +539,73 @@ class TestResolveTablesErrors:
         runner = CliRunner()
         result = runner.invoke(main, ["analyze", "--tables", "mydb.t1,bad_table"])
         assert result.exit_code != 0 or "Error" in result.output
+
+
+class TestExtractConfigFileForCluster:
+    """Tests for _extract_config_file_for_cluster."""
+
+    def test_noop_in_client_mode(self, tmp_path):
+        """In client deploy mode, args are returned unchanged."""
+        cfg = tmp_path / "lakekeeper.yaml"
+        cfg.write_text("spark_submit:\n  enabled: true\n")
+        args = ["--config-file", str(cfg), "analyze", "--table", "db.tbl"]
+        result_args, extra_files = _extract_config_file_for_cluster(args, "client")
+        assert result_args == args
+        assert extra_files == []
+
+    def test_rewrites_local_path_in_cluster_mode(self, tmp_path):
+        """Local config file is rewritten to basename and added to extra_files."""
+        cfg = tmp_path / "lakekeeper.yaml"
+        cfg.write_text("spark_submit:\n  enabled: true\n")
+        args = ["--config-file", str(cfg), "analyze", "--table", "db.tbl"]
+        result_args, extra_files = _extract_config_file_for_cluster(args, "cluster")
+        assert result_args == ["--config-file", "lakekeeper.yaml", "analyze", "--table", "db.tbl"]
+        assert extra_files == [str(cfg)]
+
+    def test_rewrites_short_flag(self, tmp_path):
+        """-c shorthand is rewritten correctly."""
+        cfg = tmp_path / "lakekeeper.yaml"
+        cfg.write_text("")
+        args = ["-c", str(cfg), "compact", "--table", "db.tbl"]
+        result_args, extra_files = _extract_config_file_for_cluster(args, "cluster")
+        assert result_args == ["-c", "lakekeeper.yaml", "compact", "--table", "db.tbl"]
+        assert extra_files == [str(cfg)]
+
+    def test_rewrites_equals_syntax(self, tmp_path):
+        """--config-file=PATH syntax is also rewritten."""
+        cfg = tmp_path / "lakekeeper.yaml"
+        cfg.write_text("")
+        args = [f"--config-file={cfg}", "analyze"]
+        result_args, extra_files = _extract_config_file_for_cluster(args, "cluster")
+        assert result_args == ["--config-file=lakekeeper.yaml", "analyze"]
+        assert extra_files == [str(cfg)]
+
+    def test_hdfs_path_not_rewritten(self):
+        """HDFS paths are left untouched — the driver can read them directly."""
+        args = ["--config-file", "hdfs:///user/me/lakekeeper.yaml", "analyze"]
+        result_args, extra_files = _extract_config_file_for_cluster(args, "cluster")
+        assert result_args == args
+        assert extra_files == []
+
+    def test_nonexistent_local_path_not_rewritten(self):
+        """A path that does not exist locally is left untouched (will fail later)."""
+        args = ["--config-file", "/does/not/exist/lakekeeper.yaml", "analyze"]
+        result_args, extra_files = _extract_config_file_for_cluster(args, "cluster")
+        assert result_args == args
+        assert extra_files == []
+
+    def test_no_config_file_arg(self):
+        """Args without --config-file are returned unchanged."""
+        args = ["analyze", "--table", "db.tbl"]
+        result_args, extra_files = _extract_config_file_for_cluster(args, "cluster")
+        assert result_args == args
+        assert extra_files == []
+
+    def test_config_file_after_subcommand(self, tmp_path):
+        """--config-file placed after the subcommand (backward-compat position) is rewritten."""
+        cfg = tmp_path / "lakekeeper.yaml"
+        cfg.write_text("")
+        args = ["analyze", "--config-file", str(cfg), "--table", "db.tbl"]
+        result_args, extra_files = _extract_config_file_for_cluster(args, "cluster")
+        assert result_args == ["analyze", "--config-file", "lakekeeper.yaml", "--table", "db.tbl"]
+        assert extra_files == [str(cfg)]
