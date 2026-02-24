@@ -215,10 +215,25 @@ class TableAnalyzer:
         table_info.total_size_bytes = total_size
 
     def _get_partition_location(self, full_name: str, spec: dict[str, str]) -> str:
-        """Get the HDFS location of a specific partition."""
+        """Get the HDFS location of a specific partition.
+
+        DESCRIBE FORMATTED … PARTITION(…) on Hive 3 / CDP emits the 'Location'
+        field twice in its output:
+          1. The partition-specific path  (under '# Detailed Partition Information')
+          2. The table-level path         (under '# Detailed Table Information')
+
+        A plain dict comprehension keeps the *last* value, returning the table
+        root instead of the partition directory.  Building the map with
+        first-occurrence semantics gives the correct partition location.
+        """
         spec_sql = ", ".join(f"{k}='{v}'" for k, v in spec.items())
         desc = self._spark.sql(f"DESCRIBE FORMATTED {full_name} PARTITION({spec_sql})").collect()
-        desc_map = {row[0].strip(): (row[1] or "").strip() for row in desc if row[0]}
+        desc_map: dict[str, str] = {}
+        for row in desc:
+            if row[0]:
+                key = row[0].strip()
+                if key not in desc_map:
+                    desc_map[key] = (row[1] or "").strip()
         return self._extract_location(desc_map)
 
     @staticmethod

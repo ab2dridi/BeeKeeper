@@ -158,7 +158,14 @@ class BackupManager:
                 spec_parts = spec_str.split("/")
                 spec_sql = ", ".join(f"{p.split('=')[0]}='{p.split('=')[1]}'" for p in spec_parts)
                 desc = self._spark.sql(f"DESCRIBE FORMATTED {backup_table} PARTITION({spec_sql})").collect()
-                desc_map = {r[0].strip(): (r[1] or "").strip() for r in desc if r[0]}
+                # First-occurrence: DESCRIBE FORMATTED PARTITION emits 'Location'
+                # twice on Hive 3 / CDP (partition path first, table path second).
+                desc_map: dict[str, str] = {}
+                for r in desc:
+                    if r[0]:
+                        k = r[0].strip()
+                        if k not in desc_map:
+                            desc_map[k] = (r[1] or "").strip()
                 for key in ("Location", "Location:"):
                     if key in desc_map and desc_map[key]:
                         partition_locations[spec_str] = desc_map[key]

@@ -270,7 +270,14 @@ class HiveExternalEngine(CompactionEngine):
                 spec_parts = spec_str.split("/")
                 spec_sql = ", ".join(f"{p.split('=')[0]}='{p.split('=')[1]}'" for p in spec_parts)
                 part_desc = self._spark.sql(f"DESCRIBE FORMATTED {backup_table} PARTITION({spec_sql})").collect()
-                part_map = {r[0].strip(): (r[1] or "").strip() for r in part_desc if r[0]}
+                # First-occurrence: DESCRIBE FORMATTED PARTITION emits 'Location'
+                # twice on Hive 3 / CDP (partition path first, table path second).
+                part_map: dict[str, str] = {}
+                for r in part_desc:
+                    if r[0]:
+                        k = r[0].strip()
+                        if k not in part_map:
+                            part_map[k] = (r[1] or "").strip()
                 part_loc = ""
                 for key in ("Location", "Location:"):
                     if key in part_map and part_map[key]:

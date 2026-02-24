@@ -273,6 +273,46 @@ class TestTableAnalyzer:
         assert result == ["year", "month", "day"]
 
 
+    def test_get_partition_location_takes_first_occurrence(self, analyzer, mock_spark, mock_hdfs_client):
+        """On Hive 3 / CDP, DESCRIBE FORMATTED PARTITION emits Location twice.
+        The first occurrence is the partition path; the second is the table root.
+        We must take the first one or all compaction renames target the table root.
+        """
+        desc_rows = [
+            _make_row("Location", "hdfs:///data/mydb/events_2p", None),
+            _make_row("InputFormat", "org.apache.hadoop.hive.ql.io.parquet.MapRedParquetInputFormat", None),
+            _make_row("# Partition Information", None, None),
+            _make_row("# col_name", "data_type", "comment"),
+            _make_row("date", "string", ""),
+            _make_row("ref", "string", ""),
+            _make_row("# Another Section", None, None),
+        ]
+        # DESCRIBE FORMATTED PARTITION output with two Location entries:
+        # 1st = partition path (correct), 2nd = table root (wrong)
+        partition_desc_rows = [
+            _make_row("# Detailed Partition Information", None, None),
+            _make_row("Location", "hdfs:///data/mydb/events_2p/date=2024-01-01/ref=A", None),
+            _make_row("# Detailed Table Information", None, None),
+            _make_row("Location", "hdfs:///data/mydb/events_2p", None),  # table root — must NOT win
+        ]
+        partition_list = [
+            MagicMock(__getitem__=lambda self, i, v=("date=2024-01-01/ref=A",): v[i]),
+        ]
+        mock_spark.sql.return_value.collect.side_effect = [
+            desc_rows,
+            partition_list,          # SHOW PARTITIONS
+            partition_desc_rows,     # DESCRIBE FORMATTED ... PARTITION(...)
+        ]
+        mock_hdfs_client.get_file_info.return_value = HdfsFileInfo(
+            file_count=900, total_size_bytes=50 * 1024 * 1024
+        )
+        result = analyzer.analyze_table("mydb", "events_2p")
+        assert result.is_partitioned is True
+        assert len(result.partitions) == 1
+        # partition.location must be the partition path, NOT the table root
+        assert result.partitions[0].location == "hdfs:///data/mydb/events_2p/date=2024-01-01/ref=A"
+
+
 class TestParsePartitionSpec:
     def test_single_partition(self):
         result = TableAnalyzer._parse_partition_spec("year=2024")
