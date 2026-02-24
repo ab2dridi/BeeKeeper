@@ -1,4 +1,4 @@
-"""Tests for beekeeper.engine.hive_external module."""
+"""Tests for lakekeeper.engine.hive_external module."""
 
 from __future__ import annotations
 
@@ -7,18 +7,18 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from beekeeper.engine.hive_external import HiveExternalEngine
-from beekeeper.models import BackupInfo, CompactionReport, CompactionStatus, FileFormat, TableInfo
+from lakekeeper.engine.hive_external import HiveExternalEngine
+from lakekeeper.models import BackupInfo, CompactionReport, CompactionStatus, FileFormat, TableInfo
 
 
 class TestHiveExternalEngine:
     @pytest.fixture
     def engine(self, mock_spark, config):
         with (
-            patch("beekeeper.engine.hive_external.HdfsClient") as mock_hdfs_cls,
-            patch("beekeeper.engine.hive_external.TableAnalyzer") as mock_analyzer_cls,
-            patch("beekeeper.engine.hive_external.BackupManager") as mock_backup_cls,
-            patch("beekeeper.engine.hive_external.Compactor") as mock_compactor_cls,
+            patch("lakekeeper.engine.hive_external.HdfsClient") as mock_hdfs_cls,
+            patch("lakekeeper.engine.hive_external.TableAnalyzer") as mock_analyzer_cls,
+            patch("lakekeeper.engine.hive_external.BackupManager") as mock_backup_cls,
+            patch("lakekeeper.engine.hive_external.Compactor") as mock_compactor_cls,
         ):
             engine = HiveExternalEngine(mock_spark, config)
             engine._mock_analyzer = mock_analyzer_cls.return_value

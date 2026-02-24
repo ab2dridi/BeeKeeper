@@ -1,4 +1,4 @@
-"""Click CLI for Beekeeper."""
+"""Click CLI for Lakekeeper."""
 
 from __future__ import annotations
 
@@ -8,37 +8,37 @@ import sys
 
 import click
 
-from beekeeper import __version__
-from beekeeper.config import BeekeeperConfig
-from beekeeper.core.reporter import print_analysis_report, print_compaction_report
-from beekeeper.models import CompactionStatus
+from lakekeeper import __version__
+from lakekeeper.config import LakekeeperConfig
+from lakekeeper.core.reporter import print_analysis_report, print_compaction_report
+from lakekeeper.models import CompactionStatus
 
-_SUBMITTED_ENV = "BEEKEEPER_SUBMITTED"
+_SUBMITTED_ENV = "LAKEKEEPER_SUBMITTED"
 
 
-def _build_config(ctx: click.Context) -> BeekeeperConfig:
+def _build_config(ctx: click.Context) -> LakekeeperConfig:
     """Build config from YAML file and CLI overrides."""
     params = ctx.params
     config_file = params.get("config_file")
 
     if config_file:
-        config = BeekeeperConfig.from_yaml(config_file)
+        config = LakekeeperConfig.from_yaml(config_file)
     else:
-        config = BeekeeperConfig()
+        config = LakekeeperConfig()
 
     return config.merge_cli_overrides(**params)
 
 
-def _maybe_submit(config: BeekeeperConfig) -> None:
+def _maybe_submit(config: LakekeeperConfig) -> None:
     """Launch via spark-submit if configured and not already running inside a submission."""
     if not config.spark_submit.enabled:
         return
     if os.environ.get(_SUBMITTED_ENV):
         return
-    from beekeeper.utils.spark import build_spark_submit_command
+    from lakekeeper.utils.spark import build_spark_submit_command
 
-    beekeeper_args = sys.argv[1:]
-    cmd = build_spark_submit_command(config.spark_submit, beekeeper_args)
+    lakekeeper_args = sys.argv[1:]
+    cmd = build_spark_submit_command(config.spark_submit, lakekeeper_args)
     click.echo(f"Launching via spark-submit: {' '.join(cmd)}")
     env = os.environ.copy()
     env[_SUBMITTED_ENV] = "1"
@@ -46,16 +46,16 @@ def _maybe_submit(config: BeekeeperConfig) -> None:
     sys.exit(result.returncode)
 
 
-def _get_engine(config: BeekeeperConfig):  # noqa: ANN202
+def _get_engine(config: LakekeeperConfig):  # noqa: ANN202
     """Create a HiveExternalEngine with SparkSession."""
-    from beekeeper.engine.hive_external import HiveExternalEngine
-    from beekeeper.utils.spark import get_or_create_spark_session
+    from lakekeeper.engine.hive_external import HiveExternalEngine
+    from lakekeeper.utils.spark import get_or_create_spark_session
 
     spark = get_or_create_spark_session()
     return HiveExternalEngine(spark, config)
 
 
-def _resolve_tables(config: BeekeeperConfig, engine) -> list[tuple[str, str]]:  # noqa: ANN001
+def _resolve_tables(config: LakekeeperConfig, engine) -> list[tuple[str, str]]:  # noqa: ANN001
     """Resolve which tables to process.
 
     Returns:
@@ -90,9 +90,9 @@ def _resolve_tables(config: BeekeeperConfig, engine) -> list[tuple[str, str]]:  
 
 
 @click.group()
-@click.version_option(version=__version__, prog_name="beekeeper")
+@click.version_option(version=__version__, prog_name="lakekeeper")
 def main() -> None:
-    """Beekeeper - Safe compaction for Hive external tables."""
+    """Lakekeeper - Safe compaction of Hive external tables."""
 
 
 @main.command()

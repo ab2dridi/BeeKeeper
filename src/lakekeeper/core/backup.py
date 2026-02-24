@@ -6,13 +6,13 @@ import logging
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from beekeeper.models import BackupInfo
+from lakekeeper.models import BackupInfo
 
 if TYPE_CHECKING:
     from pyspark.sql import SparkSession
 
-    from beekeeper.config import BeekeeperConfig
-    from beekeeper.models import TableInfo
+    from lakekeeper.config import LakekeeperConfig
+    from lakekeeper.models import TableInfo
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 class BackupManager:
     """Manages zero-copy backups of Hive external tables."""
 
-    def __init__(self, spark: SparkSession, config: BeekeeperConfig) -> None:
+    def __init__(self, spark: SparkSession, config: LakekeeperConfig) -> None:
         """Initialize the backup manager.
 
         Args:

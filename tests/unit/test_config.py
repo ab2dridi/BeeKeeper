@@ -1,15 +1,15 @@
-"""Tests for beekeeper.config module."""
+"""Tests for lakekeeper.config module."""
 
 from __future__ import annotations
 
 import pytest
 
-from beekeeper.config import BeekeeperConfig, SparkSubmitConfig
+from lakekeeper.config import LakekeeperConfig, SparkSubmitConfig
 
 
-class TestBeekeeperConfig:
+class TestLakekeeperConfig:
     def test_defaults(self):
-        config = BeekeeperConfig()
+        config = LakekeeperConfig()
         assert config.block_size_mb == 128
         assert config.compaction_ratio_threshold == 10.0
         assert config.backup_prefix == "__bkp"
@@ -21,11 +21,11 @@ class TestBeekeeperConfig:
         assert config.tables == []
 
     def test_block_size_bytes(self):
-        config = BeekeeperConfig(block_size_mb=256)
+        config = LakekeeperConfig(block_size_mb=256)
         assert config.block_size_bytes == 256 * 1024 * 1024
 
     def test_compaction_threshold_bytes(self):
-        config = BeekeeperConfig(block_size_mb=128, compaction_ratio_threshold=10.0)
+        config = LakekeeperConfig(block_size_mb=128, compaction_ratio_threshold=10.0)
         expected = int((128 * 1024 * 1024) / 10.0)
         assert config.compaction_threshold_bytes == expected
 
@@ -34,19 +34,19 @@ class TestBeekeeperConfig:
         yaml_file = tmp_path / "config.yaml"
         yaml_file.write_text(yaml_content)
 
-        config = BeekeeperConfig.from_yaml(yaml_file)
+        config = LakekeeperConfig.from_yaml(yaml_file)
         assert config.block_size_mb == 256
         assert config.compaction_ratio_threshold == 5.0
         assert config.dry_run is True
 
     def test_from_yaml_missing_file(self):
         with pytest.raises(FileNotFoundError):
-            BeekeeperConfig.from_yaml("/nonexistent/config.yaml")
+            LakekeeperConfig.from_yaml("/nonexistent/config.yaml")
 
     def test_from_yaml_empty_file(self, tmp_path):
         yaml_file = tmp_path / "empty.yaml"
         yaml_file.write_text("")
-        config = BeekeeperConfig.from_yaml(yaml_file)
+        config = LakekeeperConfig.from_yaml(yaml_file)
         assert config.block_size_mb == 128  # defaults
 
     def test_from_yaml_ignores_unknown_keys(self, tmp_path):
@@ -54,12 +54,12 @@ class TestBeekeeperConfig:
         yaml_file = tmp_path / "config.yaml"
         yaml_file.write_text(yaml_content)
 
-        config = BeekeeperConfig.from_yaml(yaml_file)
+        config = LakekeeperConfig.from_yaml(yaml_file)
         assert config.block_size_mb == 256
         assert not hasattr(config, "unknown_key")
 
     def test_merge_cli_overrides(self):
-        config = BeekeeperConfig(block_size_mb=128)
+        config = LakekeeperConfig(block_size_mb=128)
         new_config = config.merge_cli_overrides(block_size_mb=256, dry_run=True)
         assert new_config.block_size_mb == 256
         assert new_config.dry_run is True
@@ -67,17 +67,17 @@ class TestBeekeeperConfig:
         assert config.block_size_mb == 128
 
     def test_merge_cli_overrides_ignores_none(self):
-        config = BeekeeperConfig(block_size_mb=128)
+        config = LakekeeperConfig(block_size_mb=128)
         new_config = config.merge_cli_overrides(block_size_mb=None, dry_run=None)
         assert new_config.block_size_mb == 128
         assert new_config.dry_run is False
 
     def test_setup_logging(self):
-        config = BeekeeperConfig(log_level="DEBUG")
+        config = LakekeeperConfig(log_level="DEBUG")
         config.setup_logging()  # Should not raise
 
     def test_spark_submit_default_disabled(self):
-        config = BeekeeperConfig()
+        config = LakekeeperConfig()
         assert config.spark_submit.enabled is False
         assert config.spark_submit.master == "yarn"
         assert config.spark_submit.deploy_mode == "client"
@@ -99,7 +99,7 @@ class TestBeekeeperConfig:
         yaml_file = tmp_path / "config.yaml"
         yaml_file.write_text(yaml_content)
 
-        config = BeekeeperConfig.from_yaml(yaml_file)
+        config = LakekeeperConfig.from_yaml(yaml_file)
 
         assert config.block_size_mb == 256
         assert config.spark_submit.enabled is True
@@ -111,7 +111,7 @@ class TestBeekeeperConfig:
         assert config.spark_submit.extra_conf == {"spark.driver.memory": "2g"}
 
     def test_merge_cli_overrides_preserves_spark_submit(self):
-        config = BeekeeperConfig()
+        config = LakekeeperConfig()
         config.spark_submit = SparkSubmitConfig(enabled=True, queue="my-queue")
         new_config = config.merge_cli_overrides(block_size_mb=256)
         assert new_config.spark_submit.enabled is True
@@ -127,7 +127,7 @@ class TestSparkSubmitConfig:
         assert cfg.principal is None
         assert cfg.keytab is None
         assert cfg.queue is None
-        assert cfg.script_path == "run_beekeeper.py"
+        assert cfg.script_path == "run_lakekeeper.py"
         assert cfg.extra_conf == {}
 
     def test_from_dict_full(self):
@@ -144,7 +144,7 @@ class TestSparkSubmitConfig:
             "num_executors": 20,
             "executor_cores": 4,
             "driver_memory": "4g",
-            "script_path": "/opt/beekeeper/run_beekeeper.py",
+            "script_path": "/opt/lakekeeper/run_lakekeeper.py",
             "extra_conf": {"spark.yarn.kerberos.relogin.period": "1h"},
         }
         cfg = SparkSubmitConfig.from_dict(data)

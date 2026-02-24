@@ -6,7 +6,7 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from beekeeper.models import BackupInfo, CompactionReport, TableInfo
+    from lakekeeper.models import BackupInfo, CompactionReport, TableInfo
 
 
 class CompactionEngine(ABC):

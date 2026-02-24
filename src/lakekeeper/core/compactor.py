@@ -7,15 +7,15 @@ import math
 import time
 from typing import TYPE_CHECKING
 
-from beekeeper.models import CompactionReport, CompactionStatus
+from lakekeeper.models import CompactionReport, CompactionStatus
 
 if TYPE_CHECKING:
     from pyspark.sql import SparkSession
 
-    from beekeeper.config import BeekeeperConfig
-    from beekeeper.core.backup import BackupManager
-    from beekeeper.models import BackupInfo, PartitionInfo, TableInfo
-    from beekeeper.utils.hdfs import HdfsClient
+    from lakekeeper.config import LakekeeperConfig
+    from lakekeeper.core.backup import BackupManager
+    from lakekeeper.models import BackupInfo, PartitionInfo, TableInfo
+    from lakekeeper.utils.hdfs import HdfsClient
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +27,7 @@ class Compactor:
         self,
         spark: SparkSession,
         hdfs_client: HdfsClient,
-        config: BeekeeperConfig,
+        config: LakekeeperConfig,
         backup_mgr: BackupManager,
     ) -> None:
         """Initialize the compactor.

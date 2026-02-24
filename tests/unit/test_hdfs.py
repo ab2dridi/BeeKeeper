@@ -1,4 +1,4 @@
-"""Tests for beekeeper.utils.hdfs module."""
+"""Tests for lakekeeper.utils.hdfs module."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from beekeeper.utils.hdfs import HdfsClient, HdfsFileInfo
+from lakekeeper.utils.hdfs import HdfsClient, HdfsFileInfo
 
 
 class TestHdfsFileInfo:

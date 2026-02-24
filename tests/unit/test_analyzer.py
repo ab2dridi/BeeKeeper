@@ -1,4 +1,4 @@
-"""Tests for beekeeper.core.analyzer module."""
+"""Tests for lakekeeper.core.analyzer module."""
 
 from __future__ import annotations
 
@@ -6,9 +6,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from beekeeper.core.analyzer import TableAnalyzer
-from beekeeper.models import FileFormat
-from beekeeper.utils.hdfs import HdfsFileInfo
+from lakekeeper.core.analyzer import TableAnalyzer
+from lakekeeper.models import FileFormat
+from lakekeeper.utils.hdfs import HdfsFileInfo
 
 
 def _make_row(col0, col1="", col2=""):

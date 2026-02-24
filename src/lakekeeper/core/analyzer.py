@@ -7,13 +7,13 @@ import math
 import re
 from typing import TYPE_CHECKING
 
-from beekeeper.models import FileFormat, PartitionInfo, TableInfo
+from lakekeeper.models import FileFormat, PartitionInfo, TableInfo
 
 if TYPE_CHECKING:
     from pyspark.sql import SparkSession
 
-    from beekeeper.config import BeekeeperConfig
-    from beekeeper.utils.hdfs import HdfsClient
+    from lakekeeper.config import LakekeeperConfig
+    from lakekeeper.utils.hdfs import HdfsClient
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +30,7 @@ _FORMAT_MAP = {
 class TableAnalyzer:
     """Analyzes Hive tables to determine if compaction is needed."""
 
-    def __init__(self, spark: SparkSession, hdfs_client: HdfsClient, config: BeekeeperConfig) -> None:
+    def __init__(self, spark: SparkSession, hdfs_client: HdfsClient, config: LakekeeperConfig) -> None:
         """Initialize the analyzer.
 
         Args:

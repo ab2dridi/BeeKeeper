@@ -1,4 +1,4 @@
-"""Tests for beekeeper.core.compactor module."""
+"""Tests for lakekeeper.core.compactor module."""
 
 from __future__ import annotations
 
@@ -7,9 +7,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from beekeeper.core.compactor import Compactor
-from beekeeper.models import BackupInfo, CompactionStatus
-from beekeeper.utils.hdfs import HdfsFileInfo
+from lakekeeper.core.compactor import Compactor
+from lakekeeper.models import BackupInfo, CompactionStatus
+from lakekeeper.utils.hdfs import HdfsFileInfo
 
 
 class TestCompactor:

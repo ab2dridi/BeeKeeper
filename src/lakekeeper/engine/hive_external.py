@@ -7,17 +7,17 @@ import re
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
-from beekeeper.core.analyzer import TableAnalyzer
-from beekeeper.core.backup import BackupManager
-from beekeeper.core.compactor import Compactor
-from beekeeper.engine.base import CompactionEngine
-from beekeeper.utils.hdfs import HdfsClient
+from lakekeeper.core.analyzer import TableAnalyzer
+from lakekeeper.core.backup import BackupManager
+from lakekeeper.core.compactor import Compactor
+from lakekeeper.engine.base import CompactionEngine
+from lakekeeper.utils.hdfs import HdfsClient
 
 if TYPE_CHECKING:
     from pyspark.sql import SparkSession
 
-    from beekeeper.config import BeekeeperConfig
-    from beekeeper.models import BackupInfo, CompactionReport, TableInfo
+    from lakekeeper.config import LakekeeperConfig
+    from lakekeeper.models import BackupInfo, CompactionReport, TableInfo
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 class HiveExternalEngine(CompactionEngine):
     """Compaction engine for Hive external tables."""
 
-    def __init__(self, spark: SparkSession, config: BeekeeperConfig) -> None:
+    def __init__(self, spark: SparkSession, config: LakekeeperConfig) -> None:
         """Initialize the engine.
 
         Args:

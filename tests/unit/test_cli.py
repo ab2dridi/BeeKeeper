@@ -1,4 +1,4 @@
-"""Tests for beekeeper.cli module."""
+"""Tests for lakekeeper.cli module."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from click.testing import CliRunner
 
-from beekeeper.cli import _parse_duration, main
+from lakekeeper.cli import _parse_duration, main
 
 
 class TestParseDate:
@@ -34,19 +34,19 @@ class TestCLIGroup:
         runner = CliRunner()
         result = runner.invoke(main, ["--version"])
         assert result.exit_code == 0
-        assert "0.1.0" in result.output
+        assert "0.0.1" in result.output
 
     def test_help(self):
         runner = CliRunner()
         result = runner.invoke(main, ["--help"])
         assert result.exit_code == 0
-        assert "Beekeeper" in result.output
+        assert "Lakekeeper" in result.output
 
 
 class TestAnalyzeCommand:
-    @patch("beekeeper.cli._get_engine")
+    @patch("lakekeeper.cli._get_engine")
     def test_analyze_single_table(self, mock_get_engine):
-        from beekeeper.models import FileFormat, TableInfo
+        from lakekeeper.models import FileFormat, TableInfo
 
         mock_engine = MagicMock()
         mock_get_engine.return_value = mock_engine
@@ -64,9 +64,9 @@ class TestAnalyzeCommand:
         assert result.exit_code == 0
         assert "1 table(s)" in result.output
 
-    @patch("beekeeper.cli._get_engine")
+    @patch("lakekeeper.cli._get_engine")
     def test_analyze_database(self, mock_get_engine):
-        from beekeeper.models import FileFormat, TableInfo
+        from lakekeeper.models import FileFormat, TableInfo
 
         mock_engine = MagicMock()
         mock_get_engine.return_value = mock_engine
@@ -91,9 +91,9 @@ class TestAnalyzeCommand:
 
 
 class TestCompactCommand:
-    @patch("beekeeper.cli._get_engine")
+    @patch("lakekeeper.cli._get_engine")
     def test_compact_dry_run(self, mock_get_engine):
-        from beekeeper.models import FileFormat, TableInfo
+        from lakekeeper.models import FileFormat, TableInfo
 
         mock_engine = MagicMock()
         mock_get_engine.return_value = mock_engine
@@ -113,9 +113,9 @@ class TestCompactCommand:
         assert "DRY RUN" in result.output
         mock_engine.create_backup.assert_not_called()
 
-    @patch("beekeeper.cli._get_engine")
+    @patch("lakekeeper.cli._get_engine")
     def test_compact_skip_no_compaction(self, mock_get_engine):
-        from beekeeper.models import FileFormat, TableInfo
+        from lakekeeper.models import FileFormat, TableInfo
 
         mock_engine = MagicMock()
         mock_get_engine.return_value = mock_engine
@@ -134,9 +134,9 @@ class TestCompactCommand:
 
 
 class TestRollbackCommand:
-    @patch("beekeeper.cli._get_engine")
+    @patch("lakekeeper.cli._get_engine")
     def test_rollback(self, mock_get_engine):
-        from beekeeper.models import BackupInfo
+        from lakekeeper.models import BackupInfo
 
         mock_engine = MagicMock()
         mock_get_engine.return_value = mock_engine
@@ -160,7 +160,7 @@ class TestRollbackCommand:
 
 
 class TestCleanupCommand:
-    @patch("beekeeper.cli._get_engine")
+    @patch("lakekeeper.cli._get_engine")
     def test_cleanup_table(self, mock_get_engine):
         mock_engine = MagicMock()
         mock_get_engine.return_value = mock_engine
@@ -171,7 +171,7 @@ class TestCleanupCommand:
         assert result.exit_code == 0
         assert "Cleaned 2 backup(s)" in result.output
 
-    @patch("beekeeper.cli._get_engine")
+    @patch("lakekeeper.cli._get_engine")
     def test_cleanup_database_with_older_than(self, mock_get_engine):
         mock_engine = MagicMock()
         mock_get_engine.return_value = mock_engine
@@ -183,14 +183,14 @@ class TestCleanupCommand:
         assert result.exit_code == 0
         mock_engine.cleanup.assert_called_once_with("mydb", "t1", 7)
 
-    @patch("beekeeper.cli._get_engine")
+    @patch("lakekeeper.cli._get_engine")
     def test_cleanup_no_args(self, mock_get_engine):
         mock_get_engine.return_value = MagicMock()
         runner = CliRunner()
         result = runner.invoke(main, ["cleanup"])
         assert result.exit_code != 0 or "Error" in result.output
 
-    @patch("beekeeper.cli._get_engine")
+    @patch("lakekeeper.cli._get_engine")
     def test_cleanup_database_includes_orphans(self, mock_get_engine):
         mock_engine = MagicMock()
         mock_get_engine.return_value = mock_engine
@@ -206,9 +206,9 @@ class TestCleanupCommand:
 
 
 class TestAnalyzeWithTables:
-    @patch("beekeeper.cli._get_engine")
+    @patch("lakekeeper.cli._get_engine")
     def test_analyze_comma_separated_tables(self, mock_get_engine):
-        from beekeeper.models import FileFormat, TableInfo
+        from lakekeeper.models import FileFormat, TableInfo
 
         mock_engine = MagicMock()
         mock_get_engine.return_value = mock_engine
@@ -226,9 +226,9 @@ class TestAnalyzeWithTables:
 
 
 class TestCompactWithBackup:
-    @patch("beekeeper.cli._get_engine")
+    @patch("lakekeeper.cli._get_engine")
     def test_compact_full_workflow(self, mock_get_engine):
-        from beekeeper.models import BackupInfo, CompactionReport, CompactionStatus, FileFormat, TableInfo
+        from lakekeeper.models import BackupInfo, CompactionReport, CompactionStatus, FileFormat, TableInfo
 
         mock_engine = MagicMock()
         mock_get_engine.return_value = mock_engine
@@ -262,9 +262,9 @@ class TestCompactWithBackup:
 
 
 class TestCompactErrorHandling:
-    @patch("beekeeper.cli._get_engine")
+    @patch("lakekeeper.cli._get_engine")
     def test_compact_backup_failure_exits_nonzero(self, mock_get_engine):
-        from beekeeper.models import FileFormat, TableInfo
+        from lakekeeper.models import FileFormat, TableInfo
 
         mock_engine = MagicMock()
         mock_get_engine.return_value = mock_engine
@@ -285,9 +285,9 @@ class TestCompactErrorHandling:
         assert "Error creating backup" in result.output
         mock_engine.compact.assert_not_called()
 
-    @patch("beekeeper.cli._get_engine")
+    @patch("lakekeeper.cli._get_engine")
     def test_compact_failed_report_exits_nonzero(self, mock_get_engine):
-        from beekeeper.models import BackupInfo, CompactionReport, CompactionStatus, FileFormat, TableInfo
+        from lakekeeper.models import BackupInfo, CompactionReport, CompactionStatus, FileFormat, TableInfo
 
         mock_engine = MagicMock()
         mock_get_engine.return_value = mock_engine
@@ -316,10 +316,10 @@ class TestCompactErrorHandling:
         result = runner.invoke(main, ["compact", "--table", "mydb.tbl"])
         assert result.exit_code != 0
 
-    @patch("beekeeper.cli._get_engine")
+    @patch("lakekeeper.cli._get_engine")
     def test_compact_partial_failure_exits_nonzero(self, mock_get_engine):
         """If one table fails and another succeeds, exit code is still non-zero."""
-        from beekeeper.models import BackupInfo, CompactionReport, CompactionStatus, FileFormat, TableInfo
+        from lakekeeper.models import BackupInfo, CompactionReport, CompactionStatus, FileFormat, TableInfo
 
         mock_engine = MagicMock()
         mock_get_engine.return_value = mock_engine
@@ -367,9 +367,9 @@ class TestCompactErrorHandling:
 
 
 class TestCompactWithConfigFile:
-    @patch("beekeeper.cli._get_engine")
+    @patch("lakekeeper.cli._get_engine")
     def test_compact_with_yaml_config(self, mock_get_engine, tmp_path):
-        from beekeeper.models import FileFormat, TableInfo
+        from lakekeeper.models import FileFormat, TableInfo
 
         config_file = tmp_path / "config.yaml"
         config_file.write_text("block_size_mb: 256\ndry_run: true\n")
@@ -393,10 +393,10 @@ class TestCompactWithConfigFile:
 
 
 class TestMaybeSubmit:
-    @patch("beekeeper.cli._get_engine")
+    @patch("lakekeeper.cli._get_engine")
     def test_no_submit_when_disabled(self, mock_get_engine, tmp_path):
         """When spark_submit.enabled=False, behaves normally without calling spark-submit."""
-        from beekeeper.models import FileFormat, TableInfo
+        from lakekeeper.models import FileFormat, TableInfo
 
         mock_engine = MagicMock()
         mock_get_engine.return_value = mock_engine
@@ -417,12 +417,12 @@ class TestMaybeSubmit:
         assert result.exit_code == 0
         mock_run.assert_not_called()
 
-    @patch("beekeeper.cli._get_engine")
+    @patch("lakekeeper.cli._get_engine")
     def test_submit_launches_spark_submit(self, mock_get_engine, tmp_path):
         """When spark_submit.enabled=True and not already submitted, launches spark-submit."""
         config_file = tmp_path / "config.yaml"
         config_file.write_text(
-            "spark_submit:\n  enabled: true\n  master: yarn\n  queue: my-queue\n  script_path: /opt/run_beekeeper.py\n"
+            "spark_submit:\n  enabled: true\n  master: yarn\n  queue: my-queue\n  script_path: /opt/run_lakekeeper.py\n"
         )
         runner = CliRunner()
         with patch("subprocess.run") as mock_run, patch("sys.exit") as mock_exit:
@@ -430,7 +430,7 @@ class TestMaybeSubmit:
             runner.invoke(
                 main,
                 ["compact", "--database", "mydb", "--config-file", str(config_file)],
-                env={"BEEKEEPER_SUBMITTED": ""},
+                env={"LAKEKEEPER_SUBMITTED": ""},
                 catch_exceptions=False,
             )
         mock_run.assert_called_once()
@@ -439,13 +439,13 @@ class TestMaybeSubmit:
         assert "--master" in cmd
         assert "yarn" in cmd
         assert "spark.yarn.queue=my-queue" in cmd
-        assert "/opt/run_beekeeper.py" in cmd
+        assert "/opt/run_lakekeeper.py" in cmd
         mock_exit.assert_any_call(0)
 
-    @patch("beekeeper.cli._get_engine")
+    @patch("lakekeeper.cli._get_engine")
     def test_no_submit_when_already_submitted(self, mock_get_engine, tmp_path):
-        """When BEEKEEPER_SUBMITTED=1 is set, does not re-launch spark-submit."""
-        from beekeeper.models import FileFormat, TableInfo
+        """When LAKEKEEPER_SUBMITTED=1 is set, does not re-launch spark-submit."""
+        from lakekeeper.models import FileFormat, TableInfo
 
         mock_engine = MagicMock()
         mock_get_engine.return_value = mock_engine
@@ -465,21 +465,21 @@ class TestMaybeSubmit:
             result = runner.invoke(
                 main,
                 ["analyze", "--table", "mydb.tbl", "--config-file", str(config_file)],
-                env={"BEEKEEPER_SUBMITTED": "1"},
+                env={"LAKEKEEPER_SUBMITTED": "1"},
             )
         assert result.exit_code == 0
         mock_run.assert_not_called()
 
 
 class TestResolveTablesErrors:
-    @patch("beekeeper.cli._get_engine")
+    @patch("lakekeeper.cli._get_engine")
     def test_invalid_table_format(self, mock_get_engine):
         mock_get_engine.return_value = MagicMock()
         runner = CliRunner()
         result = runner.invoke(main, ["analyze", "--table", "no_dot_table"])
         assert result.exit_code != 0 or "Error" in result.output
 
-    @patch("beekeeper.cli._get_engine")
+    @patch("lakekeeper.cli._get_engine")
     def test_invalid_tables_format(self, mock_get_engine):
         mock_get_engine.return_value = MagicMock()
         runner = CliRunner()

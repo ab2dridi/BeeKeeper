@@ -8,17 +8,17 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from pyspark.sql import SparkSession
 
-    from beekeeper.config import SparkSubmitConfig
+    from lakekeeper.config import SparkSubmitConfig
 
 logger = logging.getLogger(__name__)
 
 
-def build_spark_submit_command(spark_cfg: SparkSubmitConfig, beekeeper_args: list[str]) -> list[str]:
+def build_spark_submit_command(spark_cfg: SparkSubmitConfig, lakekeeper_args: list[str]) -> list[str]:
     """Build a spark-submit command list from a SparkSubmitConfig.
 
     Args:
         spark_cfg: Spark submit configuration.
-        beekeeper_args: Beekeeper CLI arguments to append after the script path.
+        lakekeeper_args: CLI arguments for lakekeeper to append after the script path.
 
     Returns:
         Full command list suitable for subprocess.run().
@@ -47,12 +47,12 @@ def build_spark_submit_command(spark_cfg: SparkSubmitConfig, beekeeper_args: lis
         cmd += ["--conf", f"{key}={value}"]
 
     cmd.append(spark_cfg.script_path)
-    cmd += beekeeper_args
+    cmd += lakekeeper_args
     return cmd
 
 
 def get_or_create_spark_session(
-    app_name: str = "beekeeper",
+    app_name: str = "lakekeeper",
     master: str | None = None,
     enable_hive: bool = True,
 ) -> SparkSession:

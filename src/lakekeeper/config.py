@@ -28,7 +28,7 @@ class SparkSubmitConfig:
     num_executors: int | None = None
     executor_cores: int | None = None
     driver_memory: str | None = None
-    script_path: str = "run_beekeeper.py"
+    script_path: str = "run_lakekeeper.py"
     extra_conf: dict[str, str] = field(default_factory=dict)
 
     @classmethod
@@ -40,7 +40,7 @@ class SparkSubmitConfig:
 
 
 @dataclass
-class BeekeeperConfig:
+class LakekeeperConfig:
     """Beekeeper configuration with defaults, YAML override, and CLI override."""
 
     block_size_mb: int = 128
@@ -55,14 +55,14 @@ class BeekeeperConfig:
     spark_submit: SparkSubmitConfig = field(default_factory=SparkSubmitConfig)
 
     @classmethod
-    def from_yaml(cls, path: str | Path) -> BeekeeperConfig:
+    def from_yaml(cls, path: str | Path) -> LakekeeperConfig:
         """Load configuration from a YAML file.
 
         Args:
             path: Path to the YAML configuration file.
 
         Returns:
-            A BeekeeperConfig instance with values from the YAML file.
+            A LakekeeperConfig instance with values from the YAML file.
 
         Raises:
             FileNotFoundError: If the config file does not exist.
@@ -78,7 +78,7 @@ class BeekeeperConfig:
         return cls._from_dict(data)
 
     @classmethod
-    def _from_dict(cls, data: dict[str, Any]) -> BeekeeperConfig:
+    def _from_dict(cls, data: dict[str, Any]) -> LakekeeperConfig:
         """Create config from a dictionary, ignoring unknown keys."""
         valid_fields = {f.name for f in cls.__dataclass_fields__.values()}
         filtered = {k: v for k, v in data.items() if k in valid_fields and k != "spark_submit"}
@@ -87,20 +87,20 @@ class BeekeeperConfig:
             config.spark_submit = SparkSubmitConfig.from_dict(data["spark_submit"])
         return config
 
-    def merge_cli_overrides(self, **kwargs: Any) -> BeekeeperConfig:
+    def merge_cli_overrides(self, **kwargs: Any) -> LakekeeperConfig:
         """Return a new config with CLI overrides applied (non-None values only).
 
         Args:
             **kwargs: CLI parameter overrides.
 
         Returns:
-            A new BeekeeperConfig with overrides applied.
+            A new LakekeeperConfig with overrides applied.
         """
         current = {f.name: getattr(self, f.name) for f in self.__dataclass_fields__.values()}
         for key, value in kwargs.items():
             if value is not None and key in current and key != "spark_submit":
                 current[key] = value
-        return BeekeeperConfig(**current)
+        return LakekeeperConfig(**current)
 
     def setup_logging(self) -> None:
         """Configure logging based on the log_level setting."""

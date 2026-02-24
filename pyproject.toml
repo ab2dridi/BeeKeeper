@@ -3,7 +3,7 @@ requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "beekeeper"
+name = "lakekeeper"
 version = "0.0.1"
 description = "Safe compaction of Hive external tables on on-premises Kerberized Hadoop clusters"
 readme = "README.md"
@@ -14,7 +14,7 @@ authors = [
 ]
 keywords = [
     "hive", "hdfs", "spark", "compaction", "hadoop", "kerberos",
-    "pyspark", "data-engineering", "small-files",
+    "pyspark", "data-engineering", "small-files", "iceberg", "data-lake",
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -49,7 +49,7 @@ Changelog = "https://github.com/ab2dridi/BeeKeeper/blob/main/CHANGELOG.md"
 "Bug Tracker" = "https://github.com/ab2dridi/BeeKeeper/issues"
 
 [project.scripts]
-beekeeper = "beekeeper.cli:main"
+lakekeeper = "lakekeeper.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

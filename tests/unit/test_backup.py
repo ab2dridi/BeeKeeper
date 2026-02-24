@@ -1,4 +1,4 @@
-"""Tests for beekeeper.core.backup module."""
+"""Tests for lakekeeper.core.backup module."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from beekeeper.core.backup import BackupManager
+from lakekeeper.core.backup import BackupManager
 
 
 class TestBackupManager:

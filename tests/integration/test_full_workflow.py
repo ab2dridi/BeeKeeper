@@ -6,9 +6,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from beekeeper.config import BeekeeperConfig
-from beekeeper.models import CompactionStatus
-from beekeeper.utils.hdfs import HdfsFileInfo
+from lakekeeper.config import LakekeeperConfig
+from lakekeeper.models import CompactionStatus
+from lakekeeper.utils.hdfs import HdfsFileInfo
 
 
 def _make_row(col0, col1="", col2=""):
@@ -31,7 +31,7 @@ class TestFullWorkflow:
 
     @pytest.fixture
     def config(self):
-        return BeekeeperConfig(
+        return LakekeeperConfig(
             block_size_mb=128,
             compaction_ratio_threshold=10.0,
             log_level="WARNING",
@@ -39,7 +39,7 @@ class TestFullWorkflow:
 
     def test_non_partitioned_workflow(self, mock_spark, config):
         """Full workflow for a non-partitioned table."""
-        from beekeeper.engine.hive_external import HiveExternalEngine
+        from lakekeeper.engine.hive_external import HiveExternalEngine
 
         # Setup DESCRIBE FORMATTED mock
         desc_rows = [
@@ -55,7 +55,7 @@ class TestFullWorkflow:
         ]
 
         # Mock HDFS
-        with patch("beekeeper.engine.hive_external.HdfsClient") as mock_hdfs_cls:
+        with patch("lakekeeper.engine.hive_external.HdfsClient") as mock_hdfs_cls:
             mock_hdfs = mock_hdfs_cls.return_value
 
             # Before compaction: many small files
@@ -96,7 +96,7 @@ class TestFullWorkflow:
 
     def test_partitioned_workflow(self, mock_spark, config):
         """Full workflow for a partitioned table."""
-        from beekeeper.engine.hive_external import HiveExternalEngine
+        from lakekeeper.engine.hive_external import HiveExternalEngine
 
         desc_rows = [
             _make_row("Location", "hdfs:///data/mydb/logs"),
@@ -124,7 +124,7 @@ class TestFullWorkflow:
             [],  # backup: ALTER TABLE ADD PARTITION
         ]
 
-        with patch("beekeeper.engine.hive_external.HdfsClient") as mock_hdfs_cls:
+        with patch("lakekeeper.engine.hive_external.HdfsClient") as mock_hdfs_cls:
             mock_hdfs = mock_hdfs_cls.return_value
 
             small_files = HdfsFileInfo(file_count=10000, total_size_bytes=1 * 1024 * 1024 * 1024)
@@ -161,7 +161,7 @@ class TestFullWorkflow:
 
     def test_rollback_workflow(self, mock_spark, config):
         """Test rollback after compaction."""
-        from beekeeper.engine.hive_external import HiveExternalEngine
+        from lakekeeper.engine.hive_external import HiveExternalEngine
 
         table_rows = [
             MagicMock(**{"__getitem__": lambda s, k: "__bkp_events_20240101_120000" if k == "tableName" else None}),
@@ -177,7 +177,7 @@ class TestFullWorkflow:
             Exception("no partitions"),  # SHOW PARTITIONS fails (non-partitioned)
         ]
 
-        with patch("beekeeper.engine.hive_external.HdfsClient"):
+        with patch("lakekeeper.engine.hive_external.HdfsClient"):
             engine = HiveExternalEngine(mock_spark, config)
             engine.rollback("mydb", "events")
 

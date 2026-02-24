@@ -1,9 +1,9 @@
-# Beekeeper
+# Lakekeeper
 
 > Safe compaction of Hive external tables on on-premises Kerberized Hadoop clusters.
 
-[![PyPI version](https://img.shields.io/pypi/v/beekeeper.svg)](https://pypi.org/project/beekeeper/)
-[![Python](https://img.shields.io/pypi/pyversions/beekeeper.svg)](https://pypi.org/project/beekeeper/)
+[![PyPI version](https://img.shields.io/pypi/v/lakekeeper.svg)](https://pypi.org/project/lakekeeper/)
+[![Python](https://img.shields.io/pypi/pyversions/lakekeeper.svg)](https://pypi.org/project/lakekeeper/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ---
@@ -21,13 +21,13 @@ and incremental pipelines append rather than rewrite. Common tools like
 metadata cataloging properties (Apache Atlas lineage, table location in the
 Hive Metastore), making them unsuitable for production use on managed clusters.
 
-Beekeeper solves this **without touching the table's Metastore location**.
+Lakekeeper solves this **without touching the table's Metastore location**.
 
 ---
 
 ## Solution
 
-Beekeeper compacts Hive external tables safely:
+Lakekeeper compacts Hive external tables safely:
 
 - **No `saveAsTable`** — the table's Metastore location never changes, preserving lineage and catalog properties (Apache Atlas and compatible systems)
 - **Zero-copy backups** — `CREATE EXTERNAL TABLE LIKE` pointing to the original location, no data duplication
@@ -53,7 +53,7 @@ Metastore and HDFS filesystem.
 ## Installation
 
 ```bash
-pip install beekeeper
+pip install lakekeeper
 ```
 
 For development:
@@ -74,40 +74,40 @@ Suitable for development environments or clusters without Kerberos authenticatio
 
 ```bash
 # 1. Install
-pip install beekeeper
+pip install lakekeeper
 
 # 2. Analyze — see which tables need compaction (no writes, safe to run anytime)
-beekeeper analyze --database mydb
+lakekeeper analyze --database mydb
 
 # 3. Compact a specific table
-beekeeper compact --table mydb.events
+lakekeeper compact --table mydb.events
 
 # 4. If something went wrong, rollback to the original state
-beekeeper rollback --table mydb.events
+lakekeeper rollback --table mydb.events
 
 # 5. Once you're confident, remove the backup to free up disk space
-beekeeper cleanup --table mydb.events
+lakekeeper cleanup --table mydb.events
 ```
 
 ### Scenario 2 — On-premises Kerberized cluster (YAML config)
 
 On a Kerberized cluster, configure `spark_submit` in a YAML file. The
-`beekeeper` CLI automatically builds and executes the `spark-submit` command —
+`lakekeeper` CLI automatically builds and executes the `spark-submit` command —
 no need to write it manually.
 
 **Step 1 — Create the Python environment to ship to the cluster**
 
 ```bash
-conda create -n beekeeper_env python=3.9 -y
-conda activate beekeeper_env
-pip install beekeeper
-conda-pack -o beekeeper_env.tar.gz
+conda create -n lakekeeper_env python=3.9 -y
+conda activate lakekeeper_env
+pip install lakekeeper
+conda-pack -o lakekeeper_env.tar.gz
 ```
 
 **Step 2 — Write a config file**
 
 ```yaml
-# beekeeper.yaml
+# lakekeeper.yaml
 block_size_mb: 128
 compaction_ratio_threshold: 10.0
 log_level: INFO
@@ -119,13 +119,13 @@ spark_submit:
   principal: myuser@MY.REALM.COM
   keytab: /etc/security/keytabs/myuser.keytab
   queue: data-engineering
-  archives: /opt/beekeeper_env.tar.gz#beekeeper_env
-  python_env: ./beekeeper_env/bin/python
+  archives: /opt/lakekeeper_env.tar.gz#lakekeeper_env
+  python_env: ./lakekeeper_env/bin/python
   executor_memory: 4g
   num_executors: 10
   executor_cores: 2
   driver_memory: 2g
-  script_path: /opt/beekeeper/run_beekeeper.py
+  script_path: /opt/lakekeeper/run_lakekeeper.py
   extra_conf:
     spark.yarn.kerberos.relogin.period: 1h
 ```
@@ -134,40 +134,40 @@ spark_submit:
 
 ```bash
 # Analyze (dry-run, no writes)
-beekeeper --config-file beekeeper.yaml analyze --database mydb
+lakekeeper --config-file lakekeeper.yaml analyze --database mydb
 
 # Compact a single table
-beekeeper --config-file beekeeper.yaml compact --table mydb.events
+lakekeeper --config-file lakekeeper.yaml compact --table mydb.events
 
 # Compact multiple tables
-beekeeper --config-file beekeeper.yaml compact --tables mydb.events,mydb.users
+lakekeeper --config-file lakekeeper.yaml compact --tables mydb.events,mydb.users
 
 # Compact an entire database
-beekeeper --config-file beekeeper.yaml compact --database mydb
+lakekeeper --config-file lakekeeper.yaml compact --database mydb
 
 # Rollback if needed
-beekeeper --config-file beekeeper.yaml rollback --table mydb.events
+lakekeeper --config-file lakekeeper.yaml rollback --table mydb.events
 
 # Cleanup backups older than 7 days
-beekeeper --config-file beekeeper.yaml cleanup --database mydb --older-than 7d
+lakekeeper --config-file lakekeeper.yaml cleanup --database mydb --older-than 7d
 ```
 
-Under the hood, Beekeeper builds and executes:
+Under the hood, Lakekeeper builds and executes:
 
 ```
 spark-submit --master yarn --deploy-mode client \
   --principal myuser@MY.REALM.COM \
   --keytab /etc/security/keytabs/myuser.keytab \
   --conf spark.yarn.queue=data-engineering \
-  --archives /opt/beekeeper_env.tar.gz#beekeeper_env \
-  --conf spark.pyspark.python=./beekeeper_env/bin/python \
+  --archives /opt/lakekeeper_env.tar.gz#lakekeeper_env \
+  --conf spark.pyspark.python=./lakekeeper_env/bin/python \
   --executor-memory 4g --num-executors 10 \
-  /opt/beekeeper/run_beekeeper.py compact --table mydb.events
+  /opt/lakekeeper/run_lakekeeper.py compact --table mydb.events
 ```
 
 ### Scenario 3 — spark-submit manually
 
-For one-off runs or when Beekeeper is not installed on the edge node.
+For one-off runs or when Lakekeeper is not installed on the edge node.
 
 ```bash
 spark-submit \
@@ -176,9 +176,9 @@ spark-submit \
   --principal myuser@MY.REALM.COM \
   --keytab /etc/security/keytabs/myuser.keytab \
   --conf spark.yarn.queue=my-queue \
-  --archives beekeeper_env.tar.gz#beekeeper_env \
-  --conf spark.pyspark.python=./beekeeper_env/bin/python \
-  run_beekeeper.py compact --database mydb --block-size 128
+  --archives lakekeeper_env.tar.gz#lakekeeper_env \
+  --conf spark.pyspark.python=./lakekeeper_env/bin/python \
+  run_lakekeeper.py compact --database mydb --block-size 128
 ```
 
 ---
@@ -186,7 +186,7 @@ spark-submit \
 ## CLI reference
 
 ```
-beekeeper [OPTIONS] COMMAND [ARGS]...
+lakekeeper [OPTIONS] COMMAND [ARGS]...
 
 Options:
   --version  Show version and exit.
@@ -202,40 +202,40 @@ Commands:
 ### analyze
 
 ```bash
-beekeeper analyze --database mydb
-beekeeper analyze --table mydb.events
-beekeeper analyze --tables mydb.events,mydb.users
-beekeeper analyze --table mydb.events --block-size 256 --ratio-threshold 5
+lakekeeper analyze --database mydb
+lakekeeper analyze --table mydb.events
+lakekeeper analyze --tables mydb.events,mydb.users
+lakekeeper analyze --table mydb.events --block-size 256 --ratio-threshold 5
 ```
 
 ### compact
 
 ```bash
-beekeeper compact --database mydb
-beekeeper compact --table mydb.events
-beekeeper compact --tables mydb.events,mydb.users
-beekeeper compact --database mydb --block-size 256 --ratio-threshold 5
-beekeeper compact --database mydb --dry-run   # analyze only, no writes
+lakekeeper compact --database mydb
+lakekeeper compact --table mydb.events
+lakekeeper compact --tables mydb.events,mydb.users
+lakekeeper compact --database mydb --block-size 256 --ratio-threshold 5
+lakekeeper compact --database mydb --dry-run   # analyze only, no writes
 ```
 
 ### rollback
 
 ```bash
-beekeeper rollback --table mydb.events
+lakekeeper rollback --table mydb.events
 ```
 
 ### cleanup
 
 ```bash
-beekeeper cleanup --table mydb.events              # remove all backups for a table
-beekeeper cleanup --database mydb --older-than 7d  # remove backups older than 7 days
+lakekeeper cleanup --table mydb.events              # remove all backups for a table
+lakekeeper cleanup --database mydb --older-than 7d  # remove backups older than 7 days
 ```
 
 ---
 
 ## Configuration reference
 
-### Beekeeper parameters
+### Lakekeeper parameters
 
 | Parameter | Default | CLI flag | Description |
 |---|---|---|---|
@@ -261,7 +261,7 @@ beekeeper cleanup --database mydb --older-than 7d  # remove backups older than 7
 | `num_executors` | — | `--num-executors` |
 | `executor_cores` | — | `--executor-cores` |
 | `driver_memory` | — | `--driver-memory` |
-| `script_path` | `run_beekeeper.py` | Path to the entry-point script passed to spark-submit |
+| `script_path` | `run_lakekeeper.py` | Path to the entry-point script passed to spark-submit |
 | `extra_conf` | `{}` | Additional `--conf key=value` pairs |
 
 ---
@@ -270,7 +270,7 @@ beekeeper cleanup --database mydb --older-than 7d  # remove backups older than 7
 
 ### Compaction strategy — HDFS rename swap
 
-Beekeeper uses HDFS directory renames rather than `ALTER TABLE SET LOCATION`
+Lakekeeper uses HDFS directory renames rather than `ALTER TABLE SET LOCATION`
 to swap data. The table's Metastore location never changes — only the contents
 of the HDFS directory are replaced in place. Lineage and cataloging properties
 (Apache Atlas and compatible systems) are fully preserved.
@@ -326,7 +326,7 @@ remain consistent throughout the operation.
 ### Rollback
 
 ```bash
-beekeeper rollback --table mydb.events
+lakekeeper rollback --table mydb.events
 ```
 
 1. Finds the most recent backup table (`__bkp_events_*`)
@@ -340,7 +340,7 @@ The table is restored to exactly its pre-compaction state.
 ### Cleanup
 
 ```bash
-beekeeper cleanup --table mydb.events
+lakekeeper cleanup --table mydb.events
 ```
 
 1. Finds all `__bkp_events_*` backup tables
@@ -354,11 +354,11 @@ beekeeper cleanup --table mydb.events
 
 ### ⚠ Run during a maintenance window
 
-Beekeeper reads the table twice (once to count rows, once to write). Any rows
+Lakekeeper reads the table twice (once to count rows, once to write). Any rows
 written by an active pipeline **between those two reads** will not appear in
 the compacted output and will be lost after the rename swap.
 
-**Always run Beekeeper while source pipelines are stopped**, or schedule it
+**Always run Lakekeeper while source pipelines are stopped**, or schedule it
 in a maintenance window.
 
 ### ⚠ 2× disk space required
@@ -372,7 +372,7 @@ Ensure the HDFS parent directory quota allows **at least 2× the table size** be
 ### ⚠ Do not delete `__old_*` directories manually
 
 After a successful compaction, `events__old_TS/` is the rollback safety net.
-Deleting it manually makes rollback impossible. Use `beekeeper cleanup` instead.
+Deleting it manually makes rollback impossible. Use `lakekeeper cleanup` instead.
 
 ### ⚠ Do not drop backup tables manually
 
@@ -387,7 +387,7 @@ removes the Metastore pointer to `events__old_TS/` and prevents rollback.
 ### ⚠ Leftover staging directories block the next run
 
 If a previous compaction crashed, it may have left a `events__compact_tmp_TS/`
-or `events__old_TS/` directory behind. Beekeeper **refuses to start** if either
+or `events__old_TS/` directory behind. Lakekeeper **refuses to start** if either
 path already exists. Resolve manually before retrying:
 
 1. Inspect the leftover directory contents.
@@ -408,7 +408,7 @@ ruff check src/ tests/
 ruff format --check src/ tests/
 
 # Tests with coverage
-pytest tests/ -v --cov=beekeeper --cov-report=term-missing
+pytest tests/ -v --cov=lakekeeper --cov-report=term-missing
 ```
 
 ---

@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Per-partition compaction** — only partitions exceeding the small-file threshold are compacted; well-sized partitions are skipped.
 - **Zero-copy backups** — `CREATE EXTERNAL TABLE LIKE` pointing to the original HDFS location, no data duplication.
 - **Row count verification** — aborts and rolls back automatically if row counts do not match after compaction.
-- **CLI** (`beekeeper`) with four commands:
+- **CLI** (`lakekeeper`) with four commands:
   - `analyze` — dry-run analysis, reports which tables and partitions need compaction.
   - `compact` — runs compaction on a table, a list of tables, or a full database.
   - `rollback` — restores a table to its exact pre-compaction state.

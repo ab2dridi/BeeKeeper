@@ -1,12 +1,12 @@
-"""Tests for beekeeper.utils.spark module."""
+"""Tests for lakekeeper.utils.spark module."""
 
 from __future__ import annotations
 
 import sys
 from unittest.mock import MagicMock, patch
 
-from beekeeper.config import SparkSubmitConfig
-from beekeeper.utils.spark import build_spark_submit_command, stop_spark_session
+from lakekeeper.config import SparkSubmitConfig
+from lakekeeper.utils.spark import build_spark_submit_command, stop_spark_session
 
 
 class TestBuildSparkSubmitCommand:
@@ -15,7 +15,7 @@ class TestBuildSparkSubmitCommand:
         cmd = build_spark_submit_command(cfg, ["compact", "--database", "mydb"])
         assert cmd[:5] == ["spark-submit", "--master", "yarn", "--deploy-mode", "client"]
         assert cmd[-3:] == ["compact", "--database", "mydb"]
-        assert "run_beekeeper.py" in cmd
+        assert "run_lakekeeper.py" in cmd
 
     def test_kerberos_params(self):
         cfg = SparkSubmitConfig(
@@ -74,9 +74,9 @@ class TestBuildSparkSubmitCommand:
         assert "spark.dynamicAllocation.enabled=true" in cmd
 
     def test_custom_script_path(self):
-        cfg = SparkSubmitConfig(enabled=True, script_path="/opt/beekeeper/run_beekeeper.py")
+        cfg = SparkSubmitConfig(enabled=True, script_path="/opt/lakekeeper/run_lakekeeper.py")
         cmd = build_spark_submit_command(cfg, ["analyze", "--table", "mydb.mytable"])
-        assert "/opt/beekeeper/run_beekeeper.py" in cmd
+        assert "/opt/lakekeeper/run_lakekeeper.py" in cmd
         assert cmd[-3:] == ["analyze", "--table", "mydb.mytable"]
 
     def test_optional_params_omitted_when_none(self):
@@ -107,11 +107,11 @@ class TestGetOrCreateSparkSession:
         mock_builder.getOrCreate.return_value = mock_session
 
         with patch.dict(sys.modules, {"pyspark": mock_pyspark, "pyspark.sql": mock_pyspark.sql}):
-            from beekeeper.utils.spark import get_or_create_spark_session
+            from lakekeeper.utils.spark import get_or_create_spark_session
 
             result = get_or_create_spark_session()
 
-        mock_builder.appName.assert_called_with("beekeeper")
+        mock_builder.appName.assert_called_with("lakekeeper")
         mock_builder.enableHiveSupport.assert_called_once()
         assert result == mock_session
 
@@ -127,7 +127,7 @@ class TestGetOrCreateSparkSession:
         mock_builder.getOrCreate.return_value = mock_session
 
         with patch.dict(sys.modules, {"pyspark": mock_pyspark, "pyspark.sql": mock_pyspark.sql}):
-            from beekeeper.utils.spark import get_or_create_spark_session
+            from lakekeeper.utils.spark import get_or_create_spark_session
 
             get_or_create_spark_session(app_name="my_app", master="local[4]")
 
@@ -144,7 +144,7 @@ class TestGetOrCreateSparkSession:
         mock_builder.getOrCreate.return_value = mock_session
 
         with patch.dict(sys.modules, {"pyspark": mock_pyspark, "pyspark.sql": mock_pyspark.sql}):
-            from beekeeper.utils.spark import get_or_create_spark_session
+            from lakekeeper.utils.spark import get_or_create_spark_session
 
             get_or_create_spark_session(enable_hive=False)
 

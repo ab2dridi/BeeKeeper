@@ -1,9 +1,9 @@
-"""Tests for beekeeper.core.reporter module."""
+"""Tests for lakekeeper.core.reporter module."""
 
 from __future__ import annotations
 
-from beekeeper.core.reporter import format_bytes, print_analysis_report, print_compaction_report
-from beekeeper.models import CompactionReport, CompactionStatus, FileFormat, TableInfo
+from lakekeeper.core.reporter import format_bytes, print_analysis_report, print_compaction_report
+from lakekeeper.models import CompactionReport, CompactionStatus, FileFormat, TableInfo
 
 
 class TestFormatBytes:

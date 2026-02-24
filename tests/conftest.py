@@ -6,14 +6,14 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from beekeeper.config import BeekeeperConfig
-from beekeeper.models import FileFormat, PartitionInfo, TableInfo
+from lakekeeper.config import LakekeeperConfig
+from lakekeeper.models import FileFormat, PartitionInfo, TableInfo
 
 
 @pytest.fixture
 def config():
     """Default Beekeeper configuration for tests."""
-    return BeekeeperConfig(
+    return LakekeeperConfig(
         block_size_mb=128,
         compaction_ratio_threshold=10.0,
         backup_prefix="__bkp",
@@ -50,7 +50,7 @@ def mock_spark():
 @pytest.fixture
 def mock_hdfs_client():
     """Mock HDFS client."""
-    from beekeeper.utils.hdfs import HdfsClient, HdfsFileInfo
+    from lakekeeper.utils.hdfs import HdfsClient, HdfsFileInfo
 
     client = MagicMock(spec=HdfsClient)
     client.get_file_info.return_value = HdfsFileInfo(
@@ -68,7 +68,7 @@ def mock_hdfs_client():
 @pytest.fixture
 def mock_backup_mgr():
     """Mock BackupManager."""
-    from beekeeper.core.backup import BackupManager
+    from lakekeeper.core.backup import BackupManager
 
     mgr = MagicMock(spec=BackupManager)
     return mgr

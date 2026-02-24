@@ -6,7 +6,7 @@ import logging
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from beekeeper.models import CompactionReport, TableInfo
+    from lakekeeper.models import CompactionReport, TableInfo
 
 logger = logging.getLogger(__name__)
 

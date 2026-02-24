@@ -1,10 +1,10 @@
-"""Tests for beekeeper.models module."""
+"""Tests for lakekeeper.models module."""
 
 from __future__ import annotations
 
 from datetime import datetime
 
-from beekeeper.models import (
+from lakekeeper.models import (
     BackupInfo,
     CompactionReport,
     CompactionStatus,
