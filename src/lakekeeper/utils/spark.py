@@ -45,6 +45,8 @@ def build_spark_submit_command(spark_cfg: SparkSubmitConfig, lakekeeper_args: li
         cmd += ["--driver-memory", spark_cfg.driver_memory]
     for key, value in spark_cfg.extra_conf.items():
         cmd += ["--conf", f"{key}={value}"]
+    if spark_cfg.extra_files:
+        cmd += ["--files", ",".join(spark_cfg.extra_files)]
 
     cmd.append(spark_cfg.script_path)
     cmd += lakekeeper_args

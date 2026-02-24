@@ -73,6 +73,22 @@ class TestBuildSparkSubmitCommand:
         assert "spark.yarn.kerberos.relogin.period=1h" in cmd
         assert "spark.dynamicAllocation.enabled=true" in cmd
 
+    def test_extra_files(self):
+        cfg = SparkSubmitConfig(
+            enabled=True,
+            extra_files=[
+                "/etc/hive/conf.cloudera.hive/hive-site.xml",
+                "/etc/hive/conf.cloudera.hive/hdfs-site.xml",
+            ],
+        )
+        cmd = build_spark_submit_command(cfg, [])
+        assert "--files" in cmd
+        files_idx = cmd.index("--files")
+        assert cmd[files_idx + 1] == (
+            "/etc/hive/conf.cloudera.hive/hive-site.xml,"
+            "/etc/hive/conf.cloudera.hive/hdfs-site.xml"
+        )
+
     def test_custom_script_path(self):
         cfg = SparkSubmitConfig(enabled=True, script_path="/opt/lakekeeper/run_lakekeeper.py")
         cmd = build_spark_submit_command(cfg, ["analyze", "--table", "mydb.mytable"])
@@ -86,6 +102,7 @@ class TestBuildSparkSubmitCommand:
         assert "--keytab" not in cmd
         assert "--executor-memory" not in cmd
         assert "--num-executors" not in cmd
+        assert "--files" not in cmd
 
 
 class TestGetOrCreateSparkSession:

@@ -30,6 +30,7 @@ class SparkSubmitConfig:
     driver_memory: str | None = None
     script_path: str = "run_lakekeeper.py"
     extra_conf: dict[str, str] = field(default_factory=dict)
+    extra_files: list[str] = field(default_factory=list)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> SparkSubmitConfig:
