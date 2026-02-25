@@ -199,6 +199,15 @@ backup_prefix: __bkp
 # Logging verbosity. One of: DEBUG | INFO | WARNING | ERROR
 log_level: INFO
 
+# Run ANALYZE TABLE COMPUTE STATISTICS after each successful compaction.
+# Updates row count, file count, and total size in the Hive Metastore so
+# that the query planner uses accurate statistics for the freshly compacted
+# data. For partitioned tables, statistics are refreshed per compacted
+# partition and then at the table level.
+# This adds one Metastore round-trip per compacted partition plus one
+# table-level call — negligible cost compared to the compaction itself.
+analyze_after_compaction: false
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Sort order preservation (optional)
 # ─────────────────────────────────────────────────────────────────────────────

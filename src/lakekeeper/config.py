@@ -57,6 +57,7 @@ class LakekeeperConfig:
     tables: list[str] = field(default_factory=list)
     spark_submit: SparkSubmitConfig = field(default_factory=SparkSubmitConfig)
     sort_columns: dict[str, list[str]] = field(default_factory=dict)
+    analyze_after_compaction: bool = False
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> LakekeeperConfig:

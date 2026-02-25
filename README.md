@@ -265,6 +265,7 @@ lakekeeper cleanup --database mydb --older-than 7d  # remove backups older than 
 | `dry_run` | `false` | `--dry-run` | Analyze only, no writes |
 | `log_level` | `INFO` | `--log-level` | `DEBUG`, `INFO`, `WARNING`, `ERROR` |
 | `sort_columns` | `{}` | `--sort-columns` | Per-table sort columns (see [Sort order](#sort-order-preservation)) |
+| `analyze_after_compaction` | `false` | — | Run `ANALYZE TABLE COMPUTE STATISTICS` after each successful compaction |
 
 ### spark_submit parameters
 
