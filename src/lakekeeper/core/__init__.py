@@ -1,1 +1,1 @@
-"""Core modules for Beekeeper compaction workflow."""
+"""Core modules for Lakekeeper compaction workflow."""

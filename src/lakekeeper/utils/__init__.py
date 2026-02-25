@@ -1,1 +1,1 @@
-"""Utility modules for Beekeeper."""
+"""Utility modules for Lakekeeper."""

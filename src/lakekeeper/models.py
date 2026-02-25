@@ -1,4 +1,4 @@
-"""Data models for Beekeeper."""
+"""Data models for Lakekeeper."""
 
 from __future__ import annotations
 

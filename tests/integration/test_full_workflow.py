@@ -1,4 +1,4 @@
-"""Integration test for the full Beekeeper workflow (with mocked Spark/HDFS)."""
+"""Integration test for the full Lakekeeper workflow (with mocked Spark/HDFS)."""
 
 from __future__ import annotations
 

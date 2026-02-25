@@ -35,7 +35,7 @@ class Compactor:
         Args:
             spark: Active SparkSession.
             hdfs_client: HDFS client for file operations.
-            config: Beekeeper configuration.
+            config: Lakekeeper configuration.
             backup_mgr: Backup manager to update backup table locations.
         """
         self._spark = spark

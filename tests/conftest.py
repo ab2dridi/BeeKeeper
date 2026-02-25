@@ -1,4 +1,4 @@
-"""Shared fixtures for Beekeeper tests."""
+"""Shared fixtures for Lakekeeper tests."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from lakekeeper.models import FileFormat, PartitionInfo, TableInfo
 
 @pytest.fixture
 def config():
-    """Default Beekeeper configuration for tests."""
+    """Default Lakekeeper configuration for tests."""
     return LakekeeperConfig(
         block_size_mb=128,
         compaction_ratio_threshold=10.0,

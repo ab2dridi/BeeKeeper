@@ -26,7 +26,7 @@ class BackupManager:
 
         Args:
             spark: Active SparkSession.
-            config: Beekeeper configuration.
+            config: Lakekeeper configuration.
         """
         self._spark = spark
         self._config = config

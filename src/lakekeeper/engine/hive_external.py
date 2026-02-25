@@ -31,7 +31,7 @@ class HiveExternalEngine(CompactionEngine):
 
         Args:
             spark: Active SparkSession with Hive support.
-            config: Beekeeper configuration.
+            config: Lakekeeper configuration.
         """
         self._spark = spark
         self._config = config

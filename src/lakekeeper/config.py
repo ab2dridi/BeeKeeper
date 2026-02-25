@@ -1,4 +1,4 @@
-"""Configuration management for Beekeeper."""
+"""Configuration management for Lakekeeper."""
 
 from __future__ import annotations
 
@@ -44,7 +44,7 @@ class SparkSubmitConfig:
 
 @dataclass
 class LakekeeperConfig:
-    """Beekeeper configuration with defaults, YAML override, and CLI override."""
+    """Lakekeeper configuration with defaults, YAML override, and CLI override."""
 
     block_size_mb: int = 128
     compaction_ratio_threshold: float = 10.0

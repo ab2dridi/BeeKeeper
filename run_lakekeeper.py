@@ -4,8 +4,8 @@ Usage:
     spark-submit \\
         --master yarn \\
         --deploy-mode client \\
-        --archives beekeeper_env.tar.gz#beekeeper_env \\
-        --conf spark.pyspark.python=./beekeeper_env/bin/python \\
+        --archives lakekeeper_env.tar.gz#lakekeeper_env \\
+        --conf spark.pyspark.python=./lakekeeper_env/bin/python \\
         run_lakekeeper.py compact --database mydb --block-size 128
 """
 

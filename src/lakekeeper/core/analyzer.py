@@ -36,7 +36,7 @@ class TableAnalyzer:
         Args:
             spark: Active SparkSession.
             hdfs_client: HDFS client for file operations.
-            config: Beekeeper configuration.
+            config: Lakekeeper configuration.
         """
         self._spark = spark
         self._hdfs = hdfs_client
