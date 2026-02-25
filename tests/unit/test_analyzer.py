@@ -138,6 +138,35 @@ class TestTableAnalyzer:
         with pytest.raises(SkipTableError, match="not an external table"):
             analyzer.analyze_table("mydb", "managed")
 
+    def test_analyze_iceberg_table_raises(self, analyzer, mock_spark):
+        """Iceberg EXTERNAL tables must be rejected — the rename-swap would corrupt snapshot metadata."""
+        from lakekeeper.models import SkipTableError
+
+        desc_rows = [
+            _make_row("Location", "hdfs:///data/mydb/iceberg_tbl", None),
+            _make_row("Table Type", "EXTERNAL_TABLE", None),
+            _make_row("InputFormat", "org.apache.iceberg.mr.hive.HiveIcebergInputFormat", None),
+            _make_row("SerDe Library", "org.apache.iceberg.mr.hive.HiveIcebergSerDe", None),
+        ]
+        mock_spark.sql.return_value.collect.return_value = desc_rows
+
+        with pytest.raises(SkipTableError, match="Iceberg table detected"):
+            analyzer.analyze_table("mydb", "iceberg_tbl")
+
+    def test_analyze_iceberg_detected_via_serde(self, analyzer, mock_spark):
+        """Iceberg detection falls back to SerDe Library when InputFormat is absent."""
+        from lakekeeper.models import SkipTableError
+
+        desc_rows = [
+            _make_row("Location", "hdfs:///data/mydb/iceberg_tbl", None),
+            _make_row("Table Type", "EXTERNAL_TABLE", None),
+            _make_row("SerDe Library", "org.apache.iceberg.mr.hive.HiveIcebergSerDe", None),
+        ]
+        mock_spark.sql.return_value.collect.return_value = desc_rows
+
+        with pytest.raises(SkipTableError, match="Iceberg table detected"):
+            analyzer.analyze_table("mydb", "iceberg_tbl")
+
     def test_analyze_external_table_not_skipped(self, analyzer, mock_spark, mock_hdfs_client):
         """EXTERNAL_TABLE must not be skipped."""
         desc_rows = [

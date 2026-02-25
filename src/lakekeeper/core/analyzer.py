@@ -67,6 +67,18 @@ class TableAnalyzer:
                 "Lakekeeper only supports EXTERNAL tables."
             )
 
+        # Iceberg tables are EXTERNAL in the Metastore but use a completely different
+        # storage layout (metadata JSON + manifest files).  The HDFS rename-swap used
+        # by Lakekeeper would corrupt the Iceberg snapshot chain.  Detect via
+        # InputFormat / SerDe Library and skip them explicitly.
+        input_format = desc_map.get("InputFormat", desc_map.get("InputFormat:", "")).lower()
+        serde = desc_map.get("SerDe Library", desc_map.get("SerDe Library:", "")).lower()
+        if "iceberg" in input_format or "iceberg" in serde:
+            raise SkipTableError(
+                "Iceberg table detected. Lakekeeper only supports Hive-native EXTERNAL "
+                "tables (Parquet/ORC). Use Iceberg's built-in compaction instead."
+            )
+
         location = self._extract_location(desc_map)
         file_format = self._detect_format(desc_map)
         partition_columns = self._detect_partition_columns(desc_rows)
