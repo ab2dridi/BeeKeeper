@@ -849,3 +849,125 @@ class TestSortColumnsIntegration:
         result = analyzer.analyze_table("mydb", "tbl")
 
         assert result.sort_columns == ["ts"]
+
+
+class TestMedianCompactionDetection:
+    """Tests for skewed file-size distribution detection using min(avg, median)."""
+
+    @pytest.fixture
+    def analyzer(self, mock_spark, mock_hdfs_client, config):
+        return TableAnalyzer(mock_spark, mock_hdfs_client, config)
+
+    def _desc_rows(self):
+        return [
+            _make_row("Location", "hdfs:///data/mydb/events", None),
+            _make_row("Table Type", "EXTERNAL_TABLE", None),
+            _make_row("InputFormat", "org.apache.hadoop.hive.ql.io.parquet.MapRedParquetInputFormat", None),
+        ]
+
+    def test_skewed_distribution_triggers_compaction(self, analyzer, mock_spark, mock_hdfs_client):
+        """2 large files + 98 tiny files: avg looks OK but median is tiny → compaction triggered."""
+        mock_spark.sql.return_value.collect.return_value = self._desc_rows()
+
+        large = 2 * 1024 * 1024 * 1024  # 2 GB
+        tiny = 100                        # 100 bytes
+        sizes = [large, large] + [tiny] * 98
+        mock_hdfs_client.get_file_info.return_value = HdfsFileInfo(
+            file_count=100,
+            total_size_bytes=sum(sizes),
+            file_sizes=sizes,
+        )
+
+        result = analyzer.analyze_table("mydb", "events")
+
+        # avg is dominated by the two large files → would NOT trigger compaction alone
+        assert result.avg_file_size_bytes > 40 * 1024 * 1024
+        # but median is 100 bytes → effective_size is tiny → compaction IS needed
+        assert result.median_file_size_bytes == tiny
+        assert result.needs_compaction is True
+
+    def test_uniform_distribution_below_threshold_still_compacts(
+        self, analyzer, mock_spark, mock_hdfs_client
+    ):
+        """Uniform small files: avg == median == effective → compaction triggered as before."""
+        mock_spark.sql.return_value.collect.return_value = self._desc_rows()
+
+        sizes = [5 * 1024 * 1024] * 50  # 50 × 5 MB files
+        mock_hdfs_client.get_file_info.return_value = HdfsFileInfo(
+            file_count=50,
+            total_size_bytes=sum(sizes),
+            file_sizes=sizes,
+        )
+
+        result = analyzer.analyze_table("mydb", "events")
+        assert result.needs_compaction is True
+
+    def test_uniform_distribution_above_threshold_no_compaction(
+        self, analyzer, mock_spark, mock_hdfs_client
+    ):
+        """All files already large: avg == median → no compaction."""
+        mock_spark.sql.return_value.collect.return_value = self._desc_rows()
+
+        sizes = [200 * 1024 * 1024] * 5  # 5 × 200 MB files
+        mock_hdfs_client.get_file_info.return_value = HdfsFileInfo(
+            file_count=5,
+            total_size_bytes=sum(sizes),
+            file_sizes=sizes,
+        )
+
+        result = analyzer.analyze_table("mydb", "events")
+        assert result.needs_compaction is False
+
+    def test_median_stored_on_table_info(self, analyzer, mock_spark, mock_hdfs_client):
+        """median_file_size_bytes is propagated from HdfsFileInfo to TableInfo."""
+        mock_spark.sql.return_value.collect.return_value = self._desc_rows()
+
+        sizes = [1000, 2000, 3000]
+        mock_hdfs_client.get_file_info.return_value = HdfsFileInfo(
+            file_count=3,
+            total_size_bytes=sum(sizes),
+            file_sizes=sizes,
+        )
+
+        result = analyzer.analyze_table("mydb", "events")
+        assert result.median_file_size_bytes == 2000
+
+    def test_skewed_partition_triggers_compaction(
+        self, analyzer, mock_spark, mock_hdfs_client, config
+    ):
+        """Partitioned table: skewed partition detected via effective_file_size_bytes."""
+        desc_rows = [
+            _make_row("Location", "hdfs:///data/mydb/logs", None),
+            _make_row("Table Type", "EXTERNAL_TABLE", None),
+            _make_row("InputFormat", "org.apache.hadoop.hive.ql.io.parquet.MapRedParquetInputFormat", None),
+            _make_row("# Partition Information", None, None),
+            _make_row("# col_name", "data_type", "comment"),
+            _make_row("date", "string", ""),
+            _make_row("# Another Section", None, None),
+        ]
+        partition_rows = [
+            MagicMock(__getitem__=lambda self, i, v=("date=2024-01-01",): v[i]),
+        ]
+        partition_desc = [
+            _make_row("Location", "hdfs:///data/mydb/logs/date=2024-01-01", None),
+            _make_row("InputFormat", "org.apache.hadoop.hive.ql.io.parquet.MapRedParquetInputFormat", None),
+        ]
+        mock_spark.sql.return_value.collect.side_effect = [
+            desc_rows,
+            partition_rows,
+            partition_desc,
+        ]
+
+        # Skewed: 1 large file (2 GB) + 99 tiny files (100 bytes) → avg > threshold, median tiny
+        large = 2 * 1024 * 1024 * 1024
+        tiny = 100
+        sizes = [large] + [tiny] * 99
+        mock_hdfs_client.get_file_info.return_value = HdfsFileInfo(
+            file_count=100,
+            total_size_bytes=sum(sizes),
+            file_sizes=sizes,
+        )
+
+        result = analyzer.analyze_table("mydb", "logs")
+        assert result.is_partitioned is True
+        assert result.partitions[0].needs_compaction is True

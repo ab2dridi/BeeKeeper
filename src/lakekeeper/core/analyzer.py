@@ -132,11 +132,12 @@ class TableAnalyzer:
 
         self._determine_compaction_need(table_info)
         logger.info(
-            "Table %s: %d files, %d bytes, avg %d bytes, needs_compaction=%s",
+            "Table %s: %d files, %d bytes, avg %d bytes, median %s bytes, needs_compaction=%s",
             full_name,
             table_info.total_file_count,
             table_info.total_size_bytes,
             table_info.avg_file_size_bytes,
+            table_info.median_file_size_bytes,
             table_info.needs_compaction,
         )
         return table_info
@@ -208,6 +209,7 @@ class TableAnalyzer:
         file_info = self._hdfs.get_file_info(table_info.location)
         table_info.total_file_count = file_info.file_count
         table_info.total_size_bytes = file_info.total_size_bytes
+        table_info.median_file_size_bytes = file_info.median_file_size_bytes
 
     def _analyze_partitions(self, table_info: TableInfo, partition_rows: list | None = None) -> None:
         """Analyze all partitions of a partitioned table.
@@ -251,7 +253,7 @@ class TableAnalyzer:
 
             # A single-file partition cannot be reduced further regardless of size:
             # coalesce(1 → 1) would be a no-op rename-swap with no benefit.
-            has_small_files = file_info.avg_file_size_bytes < self._config.compaction_threshold_bytes
+            has_small_files = file_info.effective_file_size_bytes < self._config.compaction_threshold_bytes
             needs_compaction = has_small_files and file_info.file_count > 1
 
             partition_info = PartitionInfo(
@@ -366,4 +368,9 @@ class TableAnalyzer:
         if table_info.is_partitioned:
             table_info.needs_compaction = any(p.needs_compaction for p in table_info.partitions)
         else:
-            table_info.needs_compaction = table_info.avg_file_size_bytes < self._config.compaction_threshold_bytes
+            effective_size = (
+                min(table_info.avg_file_size_bytes, table_info.median_file_size_bytes)
+                if table_info.median_file_size_bytes is not None
+                else table_info.avg_file_size_bytes
+            )
+            table_info.needs_compaction = effective_size < self._config.compaction_threshold_bytes

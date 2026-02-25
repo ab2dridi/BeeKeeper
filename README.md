@@ -37,6 +37,7 @@ Lakekeeper compacts Hive external tables safely:
 - **Row count verification** — aborts and rolls back automatically if counts do not match after compaction
 - **Compression codec preservation** — detects the source table's codec from `TBLPROPERTIES` (`parquet.compression` / `orc.compress`) and passes it explicitly to the writer; Spark's session default is never silently applied
 - **Sort order preservation** — optionally re-sorts data before coalescing to restore predicate-pruning efficiency; priority: CLI `--sort-columns` > YAML per-table config > DDL `SORTED BY` auto-detection
+- **Skewed distribution detection** — uses `min(avg, median)` as the effective file size; catches tables where a few large files inflate the average while dozens of tiny files go undetected
 
 ---
 
@@ -259,7 +260,7 @@ lakekeeper cleanup --database mydb --older-than 7d  # remove backups older than 
 | Parameter | Default | CLI flag | Description |
 |---|---|---|---|
 | `block_size_mb` | `128` | `--block-size` | Target HDFS block size in MB |
-| `compaction_ratio_threshold` | `10.0` | `--ratio-threshold` | Compact if avg file size < block_size / ratio |
+| `compaction_ratio_threshold` | `10.0` | `--ratio-threshold` | Compact if `min(avg, median)` file size < block_size / ratio |
 | `backup_prefix` | `__bkp` | — | Prefix for backup table names |
 | `dry_run` | `false` | `--dry-run` | Analyze only, no writes |
 | `log_level` | `INFO` | `--log-level` | `DEBUG`, `INFO`, `WARNING`, `ERROR` |
