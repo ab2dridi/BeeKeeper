@@ -17,6 +17,7 @@ class SparkSubmitConfig:
     """Configuration for launching jobs via spark-submit."""
 
     enabled: bool = False
+    submit_command: str = "spark-submit"
     master: str = "yarn"
     deploy_mode: str = "client"
     principal: str | None = None
@@ -31,6 +32,7 @@ class SparkSubmitConfig:
     script_path: str = "run_lakekeeper.py"
     extra_conf: dict[str, str] = field(default_factory=dict)
     extra_files: list[str] = field(default_factory=list)
+    py_files: list[str] = field(default_factory=list)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> SparkSubmitConfig:
